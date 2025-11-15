@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <!-- Fork -->
+    <path d="M12 4V14M12 18V28M10 14C10 16.2091 11.7909 18 14 18C16.2091 18 18 16.2091 18 14V8" stroke="black" stroke-width="2" stroke-linecap="round"/>
+    
+    <!-- Knife -->
+    <path d="M20 4V12C20 15.3137 22.6863 18 26 18H28M20 28V18" stroke="black" stroke-width="2" stroke-linecap="round"/>
+    
+    <!-- Leaves -->
+    <path d="M6 12C6 12 4 10 4 8C4 6 5 4 8 4C11 4 12 6 12 8C12 10 10 12 10 12" stroke="black" stroke-width="2" fill="none"/>
+    <path d="M26 12C26 12 28 10 28 8C28 6 27 4 24 4C21 4 20 6 20 8C20 10 22 12 22 12" stroke="black" stroke-width="2" fill="none"/>
+</svg> 

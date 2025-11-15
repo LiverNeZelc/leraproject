@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BookStore - Книжный магазин</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="js/main.js"></script>
+    <script src="js/bookstore.js"></script>
+</head>
+<body>
+    <header>
+        <nav>
+            <div class="logo">
+                <span>📚</span>
+                <span>BookStore</span>
+            </div>
+            <ul class="nav-links">
+                <li><a href="#home">Главная</a></li>
+                <li class="dropdown">
+                    <a href="#categories" class="dropdown-toggle">
+                        Категории <i class="fas fa-chevron-down"></i>
+                    </a>
+                    <ul class="dropdown-menu">
+                        <li><a href="#" data-category="all">Все категории</a></li>
+                        <li><a href="#" data-category="fiction">Художественная литература</a></li>
+                        <li><a href="#" data-category="non-fiction">Нехудожественная литература</a></li>
+                        <li><a href="#" data-category="children">Детские книги</a></li>
+                        <li><a href="#" data-category="education">Образование</a></li>
+                        <li><a href="#" data-category="business">Бизнес</a></li>
+                        <li><a href="#" data-category="psychology">Психология</a></li>
+                    </ul>
+                </li>
+                <li><a href="#catalog">Каталог</a></li>
+                <li><a href="#reviews">Отзывы</a></li>
+                <li><a href="#about">О нас</a></li>
+            </ul>
+            <div class="header-actions">
+                <div class="search-box">
+                    <input type="text" id="search-input" placeholder="Поиск книг...">
+                    <i class="fas fa-search"></i>
+                </div>
+                <div class="cart-icon" id="cartIcon">
+                    <i class="fas fa-shopping-cart"></i>
+                    <span class="cart-count">0</span>
+                </div>
+                <div class="user-profile">
+                    <i class="fas fa-user"></i>
+                </div>
+            </div>
+        </nav>
+    </header>
+
+    <main>
+        <section id="home" class="hero">
+            <div class="hero-overlay"></div>
+            <div class="hero-content">
+                <h1>Новинки</h1>
+                <p class="hero-slogan">Погрузитесь в увлекательные истории, которые только что появились на полках</p>
+                <button class="cta-button" onclick="document.getElementById('catalog').scrollIntoView({behavior: 'smooth'})">Перейти в каталог</button>
+            </div>
+        </section>
+
+        <section id="catalog" class="catalog-section">
+            <div class="container">
+                <h2>Каталог книг</h2>
+                <div class="catalog-filters">
+                    <select id="category-filter" class="filter-select">
+                        <option value="all">Все категории</option>
+                        <option value="fiction">Художественная литература</option>
+                        <option value="non-fiction">Нехудожественная литература</option>
+                        <option value="children">Детские книги</option>
+                        <option value="education">Образование</option>
+                        <option value="business">Бизнес</option>
+                        <option value="psychology">Психология</option>
+                    </select>
+                    <select id="sort-filter" class="filter-select">
+                        <option value="popular">По популярности</option>
+                        <option value="price-asc">Цена: по возрастанию</option>
+                        <option value="price-desc">Цена: по убыванию</option>
+                        <option value="newest">Новинки</option>
+                    </select>
+                </div>
+                <div class="books-grid" id="booksGrid">
+                    <!-- Книги будут добавлены через JavaScript -->
+                </div>
+            </div>
+        </section>
+
+        <section id="reviews" class="reviews-section">
+            <div class="container">
+                <h2>Отзывы читателей</h2>
+                <div class="reviews-grid">
+                    <div class="review-card">
+                        <div class="review-header">
+                            <div class="reviewer-info">
+                                <i class="fas fa-user-circle"></i>
+                                <span>Анна Иванова</span>
+                            </div>
+                            <div class="review-rating">
+                                <i class="fas fa-star"></i>
+                                <i class="fas fa-star"></i>
+                                <i class="fas fa-star"></i>
+                                <i class="fas fa-star"></i>
+                                <i class="fas fa-star"></i>
+                            </div>
+                        </div>
+                        <p class="review-text">Отличный магазин! Большой выбор книг, быстрая доставка. Рекомендую!</p>
+                    </div>
+                    <div class="review-card">
+                        <div class="review-header">
+                            <div class="reviewer-info">
+                                <i class="fas fa-user-circle"></i>
+                                <span>Дмитрий Петров</span>
+                            </div>
+                            <div class="review-rating">
+                                <i class="fas fa-star"></i>
+                                <i class="fas fa-star"></i>
+                                <i class="fas fa-star"></i>
+                                <i class="fas fa-star"></i>
+                                <i class="far fa-star"></i>
+                            </div>
+                        </div>
+                        <p class="review-text">Хорошие цены и качественные книги. Буду заказывать еще!</p>
+                    </div>
+                    <div class="review-card">
+                        <div class="review-header">
+                            <div class="reviewer-info">
+                                <i class="fas fa-user-circle"></i>
+                                <span>Мария Сидорова</span>
+                            </div>
+                            <div class="review-rating">
+                                <i class="fas fa-star"></i>
+                                <i class="fas fa-star"></i>
+                                <i class="fas fa-star"></i>
+                                <i class="fas fa-star"></i>
+                                <i class="fas fa-star"></i>
+                            </div>
+                        </div>
+                        <p class="review-text">Люблю этот магазин! Всегда нахожу что-то интересное для чтения.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="about" class="about-section">
+            <div class="container">
+                <h2>О нас</h2>
+                <div class="about-content">
+                    <div class="about-text">
+                        <p>BookStore - это современный книжный магазин с широким ассортиментом литературы на любой вкус. Мы предлагаем книги различных жанров: от классической литературы до современных бестселлеров.</p>
+                        <p>Наша миссия - сделать чтение доступным и приятным для каждого. Мы тщательно отбираем книги для нашего каталога, чтобы предложить вам только лучшее.</p>
+                    </div>
+                    <div class="about-features">
+                        <div class="feature-item">
+                            <i class="fas fa-shipping-fast"></i>
+                            <h4>Быстрая доставка</h4>
+                        </div>
+                        <div class="feature-item">
+                            <i class="fas fa-shield-alt"></i>
+                            <h4>Гарантия качества</h4>
+                        </div>
+                        <div class="feature-item">
+                            <i class="fas fa-percent"></i>
+                            <h4>Выгодные цены</h4>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Корзина -->
+    <div id="cartModal" class="modal">
+        <div class="modal-content cart-modal">
+            <span class="close-modal">&times;</span>
+            <h2>Корзина</h2>
+            <div id="cartItems" class="cart-items">
+                <!-- Товары корзины -->
+            </div>
+            <div class="cart-footer">
+                <div class="cart-total">
+                    <span>Итого: <strong id="cartTotal">0 ₽</strong></span>
+                </div>
+                <button class="checkout-btn">Оформить заказ</button>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <div class="footer-content">
+            <div class="footer-section">
+                <h4>О магазине</h4>
+                <p>BookStore - ваш надежный партнер в мире книг</p>
+            </div>
+            <div class="footer-section">
+                <h4>Контакты</h4>
+                <p>Email: info@bookstore.ru</p>
+                <p>Телефон: +7 (XXX) XXX-XX-XX</p>
+            </div>
+            <div class="footer-section">
+                <h4>Социальные сети</h4>
+                <div class="social-links">
+                    <a href="#"><i class="fab fa-facebook"></i></a>
+                    <a href="#"><i class="fab fa-instagram"></i></a>
+                    <a href="#"><i class="fab fa-telegram"></i></a>
+                </div>
+            </div>
+        </div>
+    </footer>
+</body>
+</html>
