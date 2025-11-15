@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <script src="js/main.js"></script>
     <script src="js/bookstore.js"></script>
+    <script src="js/scroll.js"></script>
 </head>
 <body>
     <header>
@@ -58,7 +59,7 @@
             <div class="hero-content">
                 <h1>Новинки</h1>
                 <p class="hero-slogan">Погрузитесь в увлекательные истории, которые только что появились на полках</p>
-                <button class="cta-button" onclick="document.getElementById('catalog').scrollIntoView({behavior: 'smooth'})">Перейти в каталог</button>
+                <button class="cta-button" id="goToCatalogBtn">Перейти в каталог</button>
             </div>
         </section>
 

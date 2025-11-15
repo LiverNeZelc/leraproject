@@ -1,15 +1,28 @@
 let cart = [];
 
+// ------------------------------
+// Глобальные фильтры
+// ------------------------------
+const currentFilters = {
+    category: 'all',
+    minPrice: null,
+    maxPrice: null,
+    sort: null,
+    q: ''
+};
+
+// ------------------------------
 // Инициализация
+// ------------------------------
 document.addEventListener('DOMContentLoaded', () => {
-    loadBooksFromServer();
+    applyFilters(); // Загрузка книг с текущими фильтрами
     updateCartCount();
     setupEventListeners();
 });
 
-// -----------------------------------------------
+// ------------------------------
 // API функции
-// -----------------------------------------------
+// ------------------------------
 async function loadBooksFromServer(params = {}) {
     const query = new URLSearchParams(params).toString();
     const res = await fetch(`/api/books?${query}`, { credentials: 'include' });
@@ -30,7 +43,6 @@ async function updateCartCount() {
     cartCount.textContent = totalItems;
 }
 
-
 async function addToCart(bookId) {
     await fetch('/api/cart', {
         method: 'POST',
@@ -49,18 +61,22 @@ async function removeFromCart(bookId) {
 }
 
 async function handleCheckout() {
+    if (cart.length === 0) {
+        alert('Корзина пуста!');
+        return;
+    }
     const res = await fetch('/api/checkout', { method: 'POST', credentials: 'include' });
     const result = await res.json();
     if (result.error) { alert(result.error); return; }
-    alert(`Заказ оформлен! Сумма: ${result.total} ₽`);
+    alert(`Заказ оформлен! Сумма: ${result.total} ₽\nСпасибо за покупку!`);
     await updateCartCount();
-    closeCart();
     await displayCartItems();
+    closeCart();
 }
 
-// -----------------------------------------------
+// ------------------------------
 // Отображение каталога
-// -----------------------------------------------
+// ------------------------------
 function displayBooks(books) {
     const booksGrid = document.getElementById('booksGrid');
     booksGrid.innerHTML = books.map(book => `
@@ -77,7 +93,7 @@ function displayBooks(books) {
         </div>
     `).join('');
 
-    // Обработчики кнопок
+    // Кнопки "Добавить в корзину"
     booksGrid.querySelectorAll('.add-to-cart-btn').forEach(btn => {
         btn.addEventListener('click', async e => {
             e.stopPropagation();
@@ -85,14 +101,15 @@ function displayBooks(books) {
         });
     });
 
-    // Клик по карточке книги открывает модалку
+    // Клик по карточке книги
     booksGrid.querySelectorAll('.book-card').forEach(card => {
         card.addEventListener('click', () => openBookModal(card.dataset.id));
     });
 }
 
-// -----------------------------------------------
+// ------------------------------
 // Модалка книги
+// ------------------------------
 function createBookModal() {
     if (document.getElementById('bookModal')) return;
     const modal = document.createElement('div');
@@ -119,10 +136,8 @@ function createBookModal() {
     `;
     document.body.appendChild(modal);
 
-    // Закрытие модалки по клику вне окна
+    // Закрытие кликом вне модалки
     modal.addEventListener('click', e => { if (e.target === modal) closeBookModal(); });
-
-    // Закрытие кнопкой
     document.getElementById('closeBookModalBtn').addEventListener('click', closeBookModal);
 }
 
@@ -155,8 +170,9 @@ function closeBookModal() {
     if (modal) modal.style.display = 'none';
 }
 
-// -----------------------------------------------
+// ------------------------------
 // Корзина
+// ------------------------------
 async function openCart() {
     const cartModal = document.getElementById('cartModal');
     await displayCartItems();
@@ -192,79 +208,93 @@ async function displayCartItems() {
     cartTotal.textContent = `${total} ₽`;
 }
 
-// -----------------------------------------------
+function closeCart() {
+    const cartModal = document.getElementById('cartModal');
+    if (cartModal) cartModal.style.display = 'none';
+}
+
+// ------------------------------
+// Фильтры
+// ------------------------------
+async function applyFilters() {
+    await loadBooksFromServer(currentFilters);
+}
+
+// ------------------------------
 // Events & setup
+// ------------------------------
 function setupEventListeners() {
-    document.getElementById('goToCatalog')?.addEventListener('click', () => {
+    document.getElementById('goToCatalogBtn')?.addEventListener('click', () => {
         document.getElementById('catalog').scrollIntoView({ behavior: 'smooth' });
     });
+
+
     document.getElementById('cartIcon')?.addEventListener('click', openCart);
 
-
-    document.getElementById('search-input')?.addEventListener('input', async e => {
-        await loadBooksFromServer({ q: e.target.value });
-    });
-    document.getElementById('category-filter')?.addEventListener('change', async e => {
-        await loadBooksFromServer({ category: e.target.value });
-    });
-    document.getElementById('sort-filter')?.addEventListener('change', async e => {
-        await loadBooksFromServer({ sort: e.target.value });
+    document.getElementById('category-filter')?.addEventListener('change', e => {
+        currentFilters.category = e.target.value;
+        applyFilters();
     });
 
-    // Smooth scrolling for all anchors
+    document.getElementById('sort-filter')?.addEventListener('change', e => {
+        currentFilters.sort = e.target.value;
+        applyFilters();
+    });
+
+    document.getElementById('search-input')?.addEventListener('input', e => {
+        currentFilters.q = e.target.value;
+        applyFilters();
+    });
+
+  const dropdownToggle = document.querySelector('.dropdown-toggle');
+    dropdownToggle?.addEventListener('click', e => {
+        e.preventDefault();  // Предотвращаем скролл к #categories
+        const dropdown = e.target.closest('.dropdown');
+        dropdown.classList.toggle('open');  // Toggle показа меню
+    });
+
+    // Клик по ссылкам в меню категорий (убрал вложенный DOMContentLoaded)
+   // Клик по ссылкам в меню категорий
+const dropdownLinks = document.querySelectorAll('.dropdown-menu a[data-category]');
+dropdownLinks.forEach(link => {
+    link.addEventListener('click', e => {
+        e.preventDefault();
+        const category = link.dataset.category;
+        currentFilters.category = category;
+        
+        // НОВОЕ: Синхронизируем селект снизу
+        const categorySelect = document.getElementById('category-filter');
+        if (categorySelect) {
+            categorySelect.value = category;  // Устанавливаем выбранный option
+        }
+        
+        applyFilters();
+        // Опционально: Прокрутка к каталогу после фильтра
+        document.getElementById('catalog').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        // Закрыть меню
+        const dropdown = link.closest('.dropdown');
+        dropdown?.classList.remove('open');
+    });
+});
+
+    // Плавный скролл для остальных якорей (пропускаем data-category)
     document.querySelectorAll('a[href^="#"]').forEach(anchor => {
         anchor.addEventListener('click', e => {
-            if (anchor.hasAttribute('data-category')) return;
+            if (anchor.hasAttribute('data-category') || anchor.classList.contains('dropdown-toggle')) return;
             e.preventDefault();
             const target = document.querySelector(anchor.getAttribute('href'));
             if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
         });
     });
 
+
     document.querySelector('#cartModal .close-modal')?.addEventListener('click', closeCart);
-
-    // ДОБАВИТЬ ЗДЕСЬ: Слушатель для checkout (уберите дубликат в конце скрипта)
     document.querySelector('.checkout-btn')?.addEventListener('click', handleCheckout);
-
 }
 
-
-
-function closeCart() {
-    const cartModal = document.getElementById('cartModal');
-    if (cartModal) cartModal.style.display = 'none';
-}
-
-document.querySelector('.checkout-btn')?.addEventListener('click', handleCheckout);
-
-async function handleCheckout() {
-    if (cart.length === 0) {
-        alert('Корзина пуста!');
-        return;
-    }
-
-    // Отправляем запрос на сервер
-    const res = await fetch('/api/checkout', {
-        method: 'POST',
-        credentials: 'include'
-    });
-    const result = await res.json();
-
-    if (result.error) {
-        alert(result.error);
-        return;
-    }
-
-    alert(`Заказ оформлен! Сумма: ${result.total} ₽\nСпасибо за покупку!`);
-
-    await updateCartCount();
-    await displayCartItems();
-    closeCart();
-}
-
-
-// -----------------------------------------------
+// ------------------------------
 // Notification
+// ------------------------------
 function showNotification(message) {
     const notification = document.createElement('div');
     notification.style.cssText = `
@@ -275,7 +305,10 @@ function showNotification(message) {
     `;
     notification.textContent = message;
     document.body.appendChild(notification);
-    setTimeout(() => { notification.style.animation = 'slideOut 0.3s ease'; setTimeout(() => notification.remove(), 300); }, 3000);
+    setTimeout(() => { 
+        notification.style.animation = 'slideOut 0.3s ease'; 
+        setTimeout(() => notification.remove(), 300); 
+    }, 3000);
 
     const style = document.createElement('style');
     style.textContent = `

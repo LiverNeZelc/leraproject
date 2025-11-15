@@ -33,33 +33,35 @@ app.use(session({
 // Получить все книги
 app.get("/api/books", async (req, res) => {
     try {
-        let books = await db.getAllBooks(); // все книги с полями AuthorName, PublisherName, Price, Genre, Year, Pages, Rating
+        let books = await db.getAllBooks(); // все книги с AuthorName, PublisherName, Price, Genre, Year, Pages, Rating
 
         const { category, minPrice, maxPrice, sort, q } = req.query;
 
-        // Фильтр по жанру
-        if (category && category.toLowerCase() !== "all") {
-            books = books.filter(b => b.Genre && b.Genre.toLowerCase() === category.toLowerCase());
-        }
+        // Применяем все фильтры последовательно
+        books = books.filter(b => {
+            let ok = true;
 
-        // Фильтр по цене
-        if (minPrice) {
-            const min = parseFloat(minPrice);
-            if (!isNaN(min)) books = books.filter(b => b.Price >= min);
-        }
-        if (maxPrice) {
-            const max = parseFloat(maxPrice);
-            if (!isNaN(max)) books = books.filter(b => b.Price <= max);
-        }
+            if (category && category.toLowerCase() !== "all") {
+                ok = ok && b.Genre && b.Genre.toLowerCase() === category.toLowerCase();
+            }
+            if (minPrice) {
+                const min = parseFloat(minPrice);
+                if (!isNaN(min)) ok = ok && b.Price >= min;
+            }
+            if (maxPrice) {
+                const max = parseFloat(maxPrice);
+                if (!isNaN(max)) ok = ok && b.Price <= max;
+            }
+            if (q) {
+                const search = q.toLowerCase();
+                ok = ok && (
+                    (b.Title && b.Title.toLowerCase().includes(search)) ||
+                    (b.AuthorName && b.AuthorName.toLowerCase().includes(search))
+                );
+            }
 
-        // Поиск по названию книги или имени автора
-        if (q) {
-            const search = q.toLowerCase();
-            books = books.filter(b =>
-                (b.Title && b.Title.toLowerCase().includes(search)) ||
-                (b.AuthorName && b.AuthorName.toLowerCase().includes(search))
-            );
-        }
+            return ok;
+        });
 
         // Сортировка
         if (sort) {
