@@ -773,3 +773,441 @@ footer {
         right: 0;
     }
 }
+
+/* Модалка аккаунта - современный стиль */
+.account-modal {
+    width: 600px;
+    max-width: 90%;
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(15px);
+    -webkit-backdrop-filter: blur(15px);
+    color: #fff;
+    border-radius: 20px;
+    padding: 2rem;
+    position: relative;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.6);
+    animation: fadeIn 0.3s ease;
+}
+
+.account-modal .close-modal {
+    position: absolute;
+    top: 15px;
+    right: 20px;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: #fff;
+    transition: color 0.2s ease;
+}
+.account-modal .close-modal:hover {
+    color: #FFD700;
+}
+
+.logout-btn {
+    width: 100%;
+    padding: 0.8rem;
+    margin-bottom: 1rem;
+    background: linear-gradient(90deg, #8B4513, #D2691E);
+    color: #fff;
+    font-weight: 600;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.logout-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+}
+
+/* Табсы */
+.account-tabs {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 1rem;
+}
+.tab-btn {
+    flex: 1;
+    padding: 0.7rem;
+    border: none;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.1);
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.2s ease;
+    color: #fff;
+}
+.tab-btn.active {
+    background: linear-gradient(90deg, #8B4513, #D2691E);
+    color: #fff;
+}
+
+.tab-pane {
+    max-height: 400px;
+    overflow-y: auto;
+}
+.tab-pane p.muted {
+    opacity: 0.7;
+    color: #fff;
+}
+
+/* Анимация появления */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Scroll для контента */
+.tab-pane::-webkit-scrollbar {
+    width: 6px;
+}
+.tab-pane::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.3);
+    border-radius: 3px;
+}
+.tab-pane::-webkit-scrollbar-track {
+    background: rgba(255,255,255,0.05);
+}
+
+/* GLASS EFFECT MODAL */
+.modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    backdrop-filter: blur(6px);
+    background: rgba(0,0,0,0.65);
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.modal-content.account-modal {
+    width: 480px;
+    padding: 2.2rem;
+    border-radius: 22px;
+    background: var(--background-blur);
+    border: 1px solid var(--glass-border);
+    backdrop-filter: blur(14px);
+    animation: slideUp 0.4s ease;
+    color: white;
+}
+
+@keyframes slideUp {
+    from { opacity: 0; transform: translateY(40px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.close-modal {
+    font-size: 1.8rem;
+    cursor: pointer;
+    float: right;
+    opacity: 0.8;
+    transition: 0.3s;
+}
+.close-modal:hover { opacity: 1; }
+
+.account-header {
+    text-align: center;
+    margin: 0 auto 1rem auto;
+}
+
+.avatar {
+    font-size: 64px;
+    margin-bottom: 10px;
+    opacity: 0.85;
+}
+
+.acc-email {
+    font-size: 1rem;
+    opacity: 0.85;
+}
+
+.logout-btn.full {
+    width: 100%;
+    margin-top: 1.3rem;
+    padding: 0.9rem;
+    background: linear-gradient(135deg, #a83232, #ff5c5c);
+}
+
+/* Модалка оформления заказа */
+.order-modal {
+    max-width: 600px;
+    width: 90%;
+    max-height: 90vh;
+    overflow-y: auto;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    border-radius: 15px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+    padding: 2rem;
+    position: relative;
+}
+
+.order-modal .close-modal {
+    position: absolute;
+    top: 1rem;
+    right: 1.5rem;
+    font-size: 2rem;
+    cursor: pointer;
+    color: #666;
+    transition: color 0.3s;
+}
+
+.order-modal .close-modal:hover {
+    color: #000;
+}
+
+.order-modal h2 {
+    text-align: center;
+    margin-bottom: 1.5rem;
+    color: #333;
+}
+
+.order-info {
+    background: #f8f9fa;
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 1.5rem;
+    border-left: 4px solid #4CAF50;
+}
+
+.order-info p {
+    margin: 0.5rem 0;
+    font-size: 1rem;
+}
+
+.form-group {
+    margin-bottom: 1.5rem;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: bold;
+    color: #333;
+}
+
+.form-group input,
+.form-group textarea,
+.form-group select {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    font-size: 1rem;
+    transition: border-color 0.3s;
+}
+
+.form-group input:focus,
+.form-group textarea:focus,
+.form-group select:focus {
+    outline: none;
+    border-color: #4CAF50;
+}
+
+.form-group textarea {
+    resize: vertical;
+    min-height: 80px;
+}
+
+.delivery-options {
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    padding: 1rem;
+    background: #f8f9fa;
+}
+
+.delivery-options label {
+    display: block;
+    margin-bottom: 0.5rem;
+    cursor: pointer;
+    font-weight: normal;
+}
+
+.delivery-options input[type="radio"] {
+    margin-right: 0.5rem;
+}
+
+#newCardFields {
+    border: 1px solid #ddd;
+    padding: 1rem;
+    border-radius: 5px;
+    background: #f8f9fa;
+    margin-top: 0.5rem;
+}
+
+#newCardFields button {
+    background: #4CAF50;
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 5px;
+    cursor: pointer;
+    margin-top: 0.5rem;
+}
+
+#newCardFields button:hover {
+    background: #45a049;
+}
+
+.order-total {
+    background: #e8f5e8;
+    padding: 1rem;
+    border-radius: 5px;
+    margin: 1.5rem 0;
+    text-align: right;
+}
+
+.order-total p {
+    margin: 0.25rem 0;
+}
+
+.order-total strong {
+    color: #4CAF50;
+    font-size: 1.2rem;
+}
+
+.submit-order-btn {
+    width: 100%;
+    background: #4CAF50;
+    color: white;
+    border: none;
+    padding: 1rem;
+    border-radius: 5px;
+    font-size: 1.1rem;
+    cursor: pointer;
+    transition: background 0.3s;
+}
+
+.submit-order-btn:hover:not(:disabled) {
+    background: #45a049;
+}
+
+.submit-order-btn:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+}
+
+.balance-warning {
+    color: #f44336;
+    font-size: 0.9rem;
+    margin-top: 0.25rem;
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+    .order-modal {
+        width: 95%;
+        padding: 1rem;
+    }
+}
+
+.close-modal {
+    font-size: 1.8rem;
+    cursor: pointer;
+    float: right;
+    opacity: 0.8;
+    transition: 0.3s;
+}
+.close-modal:hover { opacity: 1; }
+
+.account-header {
+    text-align: center;
+    margin: 0 auto 1rem auto;
+}
+
+.avatar {
+    font-size: 64px;
+    margin-bottom: 10px;
+    opacity: 0.85;
+}
+
+.acc-email {
+    font-size: 1rem;
+    opacity: 0.85;
+}
+
+.logout-btn.full {
+    width: 100%;
+    margin-top: 1.3rem;
+    padding: 0.9rem;
+    background: linear-gradient(135deg, #a83232, #ff5c5c);
+}
+
+/* Модалка оформления заказа */
+/* Стили для заказов как модулей (коричневый градиент, без лишних анимаций) */
+.order-card {
+    background: linear-gradient(135deg, #8B4513 0%, #D2691E 50%, #CD853F 100%);  /* Коричневый градиент */
+    border-radius: 12px;  /* Скруглённые углы */
+    box-shadow: 0 4px 20px rgba(139, 69, 19, 0.3);  /* Тень в тон градиента */
+    padding: 20px;        /* Отступы */
+    margin-bottom: 20px;  /* Отступ между модулями */
+    border: 1px solid rgba(210, 105, 30, 0.3);  /* Полупрозрачная граница */
+    color: #ffffff;       /* Белый текст */
+    /* Убрана transition для простоты */
+}
+
+.order-card h4 {
+    color: #ffffff;       /* Белый заголовок */
+    margin-bottom: 12px;
+    font-size: 1.2em;     /* Чуть крупнее */
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);  /* Тень для читаемости */
+    font-weight: 600;
+}
+
+.order-card p {
+    color: #f5f5f5;       /* Светло-серый для текста */
+    margin-bottom: 8px;
+    font-size: 0.95rem;
+    opacity: 0.9;
+}
+
+.order-card ul {
+    list-style-type: none;  /* Без маркеров */
+    padding-left: 0;
+    background: rgba(255, 255, 255, 0.1);  /* Полупрозрачный белый */
+    border-radius: 8px;     /* Скругление */
+    padding: 12px;          /* Отступы */
+    margin-top: 0.5rem;
+    backdrop-filter: blur(5px);  /* Лёгкий blur */
+}
+
+.order-card li {
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.15);  /* Полупрозрачный разделитель */
+    color: #e8e8e8;         /* Светлый текст */
+    font-size: 0.9rem;
+    /* Убраны hover-эффекты */
+}
+
+.order-card li:last-child {
+    border-bottom: none;  /* Убираем границу у последнего */
+}
+
+/* Скролл для контейнеров с заказами (при >3 заказах) */
+#ordersContainer.scrollable,
+#historyContainer.scrollable {
+    max-height: 400px;      /* Максимальная высота */
+    overflow-y: auto;       /* Вертикальный скролл */
+    padding-right: 10px;    /* Отступ для скроллбара */
+    background: linear-gradient(to bottom, #f8f9fa 0%, #e9ecef 100%);  /* Лёгкий градиентный фон */
+    border-radius: 10px;    /* Скругление */
+    margin: 10px 0;         /* Отступы */
+    border: 1px solid #e0e0e0;  /* Тонкая граница */
+}
+
+#ordersContainer.scrollable::-webkit-scrollbar,
+#historyContainer.scrollable::-webkit-scrollbar {
+    width: 6px;  /* Тонкий скроллбар */
+}
+
+#ordersContainer.scrollable::-webkit-scrollbar-track,
+#historyContainer.scrollable::-webkit-scrollbar-track {
+    background: var(--light-gray);  /* Светло-серый трек */
+    border-radius: 3px;
+}
+
+#ordersContainer.scrollable::-webkit-scrollbar-thumb,
+#historyContainer.scrollable::-webkit-scrollbar-thumb {
+    background: linear-gradient(to bottom, var(--primary-color), var(--secondary-color));  /* Градиентный ползунок */
+    border-radius: 3px;
+}

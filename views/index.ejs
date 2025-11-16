@@ -6,9 +6,10 @@
     <title>BookStore - Книжный магазин</title>
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <script src="js/main.js"></script>
-    <script src="js/bookstore.js"></script>
-    <script src="js/scroll.js"></script>
+    <script src="../js/main.js"></script>
+    <script src="../js/bookstore.js"></script>
+    <script src="../js/scroll.js"></script>
+     <script src="../js/admin_main.js"></script>
 </head>
 <body>
     <header>
@@ -46,13 +47,14 @@
                     <i class="fas fa-shopping-cart"></i>
                     <span class="cart-count">0</span>
                 </div>
-                <div class="user-profile">
-                    <i class="fas fa-user"></i>
-                </div>
+                <a class="user-profile-link">
+    <div class="user-profile">
+        <i class="fas fa-user"></i>
+    </div>
+</a>
             </div>
         </nav>
     </header>
-
     <main>
         <section id="home" class="hero">
             <div class="hero-overlay"></div>
@@ -62,7 +64,6 @@
                 <button class="cta-button" id="goToCatalogBtn">Перейти в каталог</button>
             </div>
         </section>
-
         <section id="catalog" class="catalog-section">
             <div class="container">
                 <h2>Каталог книг</h2>
@@ -88,7 +89,6 @@
                 </div>
             </div>
         </section>
-
         <section id="reviews" class="reviews-section">
             <div class="container">
                 <h2>Отзывы читателей</h2>
@@ -144,7 +144,6 @@
                 </div>
             </div>
         </section>
-
         <section id="about" class="about-section">
             <div class="container">
                 <h2>О нас</h2>
@@ -171,7 +170,6 @@
             </div>
         </section>
     </main>
-
     <!-- Корзина -->
     <div id="cartModal" class="modal">
         <div class="modal-content cart-modal">
@@ -182,13 +180,12 @@
             </div>
             <div class="cart-footer">
                 <div class="cart-total">
-                    <span>Итого: <strong id="cartTotal">0 ₽</strong></span>
+                    <span>Итого: <strong id="cartTotal">0 BYN</strong></span>
                 </div>
                 <button class="checkout-btn">Оформить заказ</button>
             </div>
         </div>
     </div>
-
     <footer>
         <div class="footer-content">
             <div class="footer-section">
@@ -210,5 +207,38 @@
             </div>
         </div>
     </footer>
+<!-- MODAL ACCOUNT -->
+<!-- MODAL ACCOUNT -->
+<div id="accountModal" class="modal">
+    <div class="modal-content account-modal glass">
+        <span class="close-modal">&times;</span>
+        <div class="account-header">
+            <i class="fas fa-user-circle avatar"></i>
+            <h2 id="accName">Имя пользователя</h2>
+            <p id="accEmail" class="acc-email">email@example.com</p>
+        </div>
+        
+        <nav class="account-tabs">
+            <button id="tabOrders" class="tab-btn active">Текущие заказы</button>
+            <button id="tabHistory" class="tab-btn">История заказов</button>
+        </nav>
+        
+        <div class="tab-panes">
+            <div id="paneOrders" class="tab-pane active">
+                <div id="ordersContainer">
+                    <p class="muted">Загрузка текущих заказов...</p>
+                </div>
+            </div>
+            <div id="paneHistory" class="tab-pane">
+                <div id="historyContainer">
+                    <p class="muted">Загрузка истории заказов...</p>
+                </div>
+            </div>
+        </div>
+        
+        <button id="logoutBtn" class="logout-btn full">Выйти из аккаунта</button>
+    </div>
+</div>
+
 </body>
 </html>

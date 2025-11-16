@@ -41,15 +41,17 @@ async function initDB() {
 
         // Клиенты
         await client.query(`
-        CREATE TABLE IF NOT EXISTS "Clients" (
-            "ClientID" SERIAL PRIMARY KEY,
-            "FullName" VARCHAR(255) NOT NULL,
-            "Email" VARCHAR(255),
-            "Phone" VARCHAR(50),
-            "Address" TEXT,
-            "RegistrationDate" DATE DEFAULT CURRENT_DATE,
-            "IsActive" BOOLEAN DEFAULT TRUE
-        );`);
+    CREATE TABLE IF NOT EXISTS "Clients" (
+        "ClientID" SERIAL PRIMARY KEY,
+        "FullName" VARCHAR(255) NOT NULL,
+        "Email" VARCHAR(255) UNIQUE,
+        "PasswordHash" VARCHAR(255),    -- для хранения хеша пароля
+        "Phone" VARCHAR(50),
+        "Address" TEXT,
+        "RegistrationDate" DATE DEFAULT CURRENT_DATE,
+        "IsActive" BOOLEAN DEFAULT TRUE
+    );
+`);
 
         // Сотрудники
         await client.query(`
@@ -57,6 +59,7 @@ async function initDB() {
             "EmployeeID" SERIAL PRIMARY KEY,
             "FullName" VARCHAR(255) NOT NULL,
             "Email" VARCHAR(255),
+            "PasswordHash" VARCHAR(255), 
             "Role" VARCHAR(100),
             "HireDate" DATE,
             "IsActive" BOOLEAN DEFAULT TRUE
@@ -113,8 +116,19 @@ async function initDB() {
             "DeliveryAddress" TEXT,
             "DeliveryStatus" VARCHAR(50),
             "EstimatedDate" DATE,
-            "ActualDate" DATE
+            "ActualDate" DATE,
+            "Phone" VARCHAR(50)
         );`);
+
+        await client.query(`
+    CREATE TABLE IF NOT EXISTS "OrderItems" (
+        "ItemID" SERIAL PRIMARY KEY,
+        "OrderID" INT REFERENCES "Orders"("OrderID"),
+        "BookID" INT REFERENCES "Books"("BookID"),
+        "Quantity" INT,
+        "Price" DECIMAL(10,2)
+    );
+`);
 
         await client.query('COMMIT');
         console.log('✅ Database initialized successfully');
@@ -278,18 +292,120 @@ async function createOrder(clientId, employeeId, totalAmount, status='Новый
     );
     return res.rows[0];
 }
-async function getOrdersByClient(clientId) {
-    const res = await pool.query(`SELECT * FROM "Orders" WHERE "ClientID"=$1`, [clientId]);
+
+// Доставка
+
+async function addDelivery(orderId, method, address, status='Ожидает', estimatedDate=null, actualDate=null, phone=null) {
+    const res = await pool.query(
+        `INSERT INTO "Deliveries" ("OrderID","DeliveryMethod","DeliveryAddress","DeliveryStatus","EstimatedDate","ActualDate","Phone")
+         VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+        [orderId, method, address, status, estimatedDate, actualDate, phone]
+    );
+    return res.rows[0];
+}
+
+const bcrypt = require('bcrypt');
+
+// Регистрация клиента
+async function registerClient({ FullName, Email, Password, Phone=null, Address=null }) {
+    const hash = await bcrypt.hash(Password, 10);
+    const res = await pool.query(
+        `INSERT INTO "Clients" ("FullName","Email","PasswordHash","Phone","Address") 
+         VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+        [FullName, Email, hash, Phone, Address]
+    );
+    return res.rows[0];
+}
+
+// Авторизация клиента
+async function authenticateClient(Email, Password) {
+    const res = await pool.query(`SELECT * FROM "Clients" WHERE "Email"=$1`, [Email]);
+    const client = res.rows[0];
+    if (!client) return null;
+
+    const match = await bcrypt.compare(Password, client.PasswordHash);
+    return match ? client : null;
+}
+
+// Получить клиента по Email
+async function getClientByEmail(Email) {
+    const res = await pool.query(`SELECT * FROM "Clients" WHERE "Email"=$1`, [Email]);
+    return res.rows[0];
+}
+
+
+async function getOrdersByClient(clientId, status=null) {
+    let query = `SELECT * FROM "Orders" WHERE "ClientID"=$1`;
+    let params = [clientId];
+    if (status) {
+        query += ` AND "Status"=$2`;
+        params.push(status);
+    }
+    const res = await pool.query(query, params);
     return res.rows;
 }
 
-// Доставка
-async function addDelivery(orderId, method, address, status='Ожидает', estimatedDate=null, actualDate=null) {
-    const res = await pool.query(
-        `INSERT INTO "Deliveries" ("OrderID","DeliveryMethod","DeliveryAddress","DeliveryStatus","EstimatedDate","ActualDate")
-         VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-        [orderId, method, address, status, estimatedDate, actualDate]
-    );
+
+// Новая функция слияния корзин
+async function mergeCarts(oldClientId, newClientId) {
+    const oldCart = await getCartByClient(oldClientId);
+    for (const item of oldCart) {
+        await addToCart(newClientId, item.BookID, item.Quantity);
+    }
+}
+
+async function getOrderItems(orderId) {
+    try {
+        console.log('Loading items for orderId:', orderId);  // Logging
+        const res = await pool.query(`
+            SELECT oi."ItemID", oi."Quantity", oi."Price",
+                   COALESCE(b."Title", 'Неизвестная книга') AS "Title"
+            FROM "OrderItems" oi
+            LEFT JOIN "Books" b ON oi."BookID" = b."BookID"  -- LEFT JOIN для fallback
+            WHERE oi."OrderID" = $1
+        `, [orderId]);
+        return res.rows.map(row => ({
+            Title: row.Title,
+            Quantity: parseInt(row.Quantity),
+            Price: parseFloat(row.Price)
+        }));
+    } catch (err) {
+        console.error('Error in getOrderItems for orderId', orderId, ':', err);
+        return [];
+    }
+}
+
+async function updateOrderStatus(orderId, status) {
+    await pool.query('UPDATE "Orders" SET "Status"=$1 WHERE "OrderID"=$2', [status, orderId]);
+}
+
+// Новая функция: добавить items из корзины в заказ
+async function addOrderItems(orderId, cartItems) {
+    for (const item of cartItems) {
+        await pool.query(
+            `INSERT INTO "OrderItems" ("OrderID", "BookID", "Quantity", "Price")
+             VALUES ($1, $2, $3, $4)`,
+            [orderId, item.BookID, item.Quantity, item.Price]
+        );
+        // Опционально: уменьшить Stock в Books
+        await pool.query(
+            `UPDATE "Books" SET "Stock" = "Stock" - $1 WHERE "BookID" = $2`,
+            [item.Quantity, item.BookID]
+        );
+    }
+}
+
+async function authenticateEmployee(Email, Password) {
+    const res = await pool.query(`SELECT * FROM "Employees" WHERE "Email"=$1`, [Email]);
+    const employee = res.rows[0];
+    if (!employee) return null;
+
+    const match = await bcrypt.compare(Password, employee.PasswordHash);
+    return match ? employee : null;
+}
+
+async function getEmployeeById(id) {
+    const res = await pool.query('SELECT * FROM "Employees" WHERE "EmployeeID"=$1', [id]);
     return res.rows[0];
 }
 
@@ -303,5 +419,14 @@ module.exports = {
     getClientById, addClient,
     getCartByClient, addToCart, removeFromCart, clearCart,
     createOrder, getOrdersByClient,
-    addDelivery
+    addDelivery,
+    registerClient,
+    authenticateClient,
+    getClientByEmail,
+    mergeCarts,
+    getOrderItems,
+    updateOrderStatus,
+    addOrderItems,
+    authenticateEmployee,
+    getEmployeeById,
 };
