@@ -52,10 +52,14 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     function openAccountModal() {
-        if (!window.currentUser) return;
+    if (!window.currentUser) return;
+    if (window.currentUser.userType === 'employee') {
+        openAdminModal(); // Вызов админ формы из admin_main.js
+    } else {
         accountModal.style.display = 'flex';
         activateTab('orders');
     }
+}
 
     // --- Закрытие модалки ---
     if (closeModal) {
@@ -91,91 +95,94 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Загрузка текущих заказов (с улучшенным рендером товаров) ---
     async function loadOrders() {
-        if (!ordersContainer) return;
-        ordersContainer.innerHTML = `<p class="muted">Загрузка текущих заказов...</p>`;
-        try {
-            const res = await fetch('/api/orders/current', { credentials: 'include' });
-            if (!res.ok) throw new Error('Ошибка загрузки текущих заказов');
-            const orders = await res.json();
-            console.log('Loaded orders:', orders);  // Logging для дебага
-            if (!orders || !Array.isArray(orders) || orders.length === 0) {
-                ordersContainer.innerHTML = `<p class="muted">Текущих заказов нет</p>`;
-                return;
-            }
-            ordersContainer.innerHTML = '';
-            orders.forEach(o => {
-                const div = document.createElement('div');
-                div.className = 'order-card';
-                const itemsHtml = o.Items && Array.isArray(o.Items) && o.Items.length > 0 
-                    ? o.Items.map(item => `<li>${item.Title || 'Без названия'} x${item.Quantity || 1} — ${ (item.Price || 0) * (item.Quantity || 1) } BYN</li>`).join('')
-                    : '<li>Нет деталей товаров</li>';
-                div.innerHTML = `
-                    <h4>Заказ #${o.OrderID || 'N/A'}</h4>
-                    <p><strong>Статус:</strong> ${o.Status || 'Неизвестно'}</p>
-                    <p><strong>Стоимость:</strong> ${o.TotalAmount || 0} BYN</p>
-                    <p><strong>Товары:</strong></p>
-                    <ul>
-                        ${itemsHtml}
-                    </ul>
-                `;
-                ordersContainer.appendChild(div);
-            });
-
-            // Добавление скролла, если много заказов
-            if (orders.length > 3) {
-                ordersContainer.classList.add('scrollable');
-            } else {
-                ordersContainer.classList.remove('scrollable');
-            }
-        } catch (err) {
-            console.error('Error in loadOrders:', err);
-            ordersContainer.innerHTML = `<p class="muted">Ошибка загрузки текущих заказов</p>`;
+    if (!ordersContainer) return;
+    ordersContainer.innerHTML = `<p class="muted">Загрузка текущих заказов...</p>`;
+    try {
+        const res = await fetch('/api/orders/current', { credentials: 'include' });
+        if (res.status === 403) {
+            showNotification('Доступ запрещен');
+            accountModal.style.display = 'none';
+            window.location.href = '/auth';
+            return;
         }
-    }
-
-    // --- Загрузка истории заказов (улучшена с товарами, как в текущих) ---
-    async function loadHistory() {
-        if (!historyContainer) return;
-        historyContainer.innerHTML = `<p class="muted">Загрузка истории заказов...</p>`;
-        try {
-            const res = await fetch('/api/orders/history', { credentials: 'include' });
-            if (!res.ok) throw new Error('Ошибка загрузки истории заказов');
-            const history = await res.json();
-            console.log('Loaded history orders:', history);  // Logging для дебага
-            if (!history || !Array.isArray(history) || history.length === 0) {
-                historyContainer.innerHTML = `<p class="muted">История заказов пуста</p>`;
-                return;
-            }
-            historyContainer.innerHTML = '';
-            history.forEach(o => {
-                const div = document.createElement('div');
-                div.className = 'order-card';
-                const itemsHtml = o.Items && Array.isArray(o.Items) && o.Items.length > 0 
-                    ? o.Items.map(item => `<li>${item.Title || 'Без названия'} x${item.Quantity || 1}</li>`).join('')
-                    : '<li>Нет деталей</li>';
-                div.innerHTML = `
-                    <h4>Заказ #${o.OrderID || o.id || 'N/A'}</h4>
-                    <p><strong>Статус:</strong> ${o.Status || 'Неизвестно'}</p>
-                    <p><strong>Стоимость:</strong> ${o.TotalAmount || o.total || 0} BYN</p>
-                    <p><strong>Товары:</strong></p>
-                    <ul>
-                        ${itemsHtml}
-                    </ul>
-                `;
-                historyContainer.appendChild(div);
-            });
-
-            // Добавление скролла, если много заказов
-            if (history.length > 3) {
-                historyContainer.classList.add('scrollable');
-            } else {
-                historyContainer.classList.remove('scrollable');
-            }
-        } catch (err) {
-            console.error('Error in loadHistory:', err);
-            historyContainer.innerHTML = `<p class="muted">Ошибка загрузки истории заказов</p>`;
+        if (!res.ok) throw new Error('Ошибка загрузки текущих заказов');
+        const orders = await res.json();
+        if (!orders || !Array.isArray(orders) || orders.length === 0) {
+            ordersContainer.innerHTML = `<p class="muted">Текущих заказов нет</p>`;
+            return;
         }
+        ordersContainer.innerHTML = '';
+        orders.forEach(o => {
+            const div = document.createElement('div');
+            div.className = 'order-card';
+            const itemsHtml = o.Items && Array.isArray(o.Items) && o.Items.length > 0 
+                ? o.Items.map(item => `<li>${item.Title || 'Без названия'} x${item.Quantity || 1} — ${(item.Price || 0) * (item.Quantity || 1)} BYN</li>`).join('')
+                : '<li>Нет деталей товаров</li>';
+            div.innerHTML = `
+                <h4>Заказ #${o.OrderID || 'N/A'}</h4>
+                <p><strong>Статус:</strong> ${o.Status || 'Неизвестно'}</p>
+                <p><strong>Стоимость:</strong> ${o.TotalAmount || 0} BYN</p>
+                <p><strong>Телефон:</strong> ${o.Phone || 'Не указан'}</p>
+                <p><strong>Товары:</strong></p>
+                <ul>${itemsHtml}</ul>
+            `;
+            ordersContainer.appendChild(div);
+        });
+        // Добавляем класс scrollable только при необходимости
+        if (orders.length > 3) {
+            ordersContainer.classList.add('scrollable');
+        } else {
+            ordersContainer.classList.remove('scrollable');
+        }
+    } catch (err) {
+        ordersContainer.innerHTML = `<p class="muted">Ошибка загрузки текущих заказов</p>`;
     }
+}
+
+async function loadHistory() {
+    if (!historyContainer) return;
+    historyContainer.innerHTML = `<p class="muted">Загрузка истории заказов...</p>`;
+    try {
+        const res = await fetch('/api/orders/history', { credentials: 'include' });
+        if (res.status === 403) {
+            showNotification('Доступ запрещен');
+            accountModal.style.display = 'none';
+            window.location.href = '/auth';
+            return;
+        }
+        if (!res.ok) throw new Error('Ошибка загрузки истории заказов');
+        const history = await res.json();
+        if (!history || !Array.isArray(history) || history.length === 0) {
+            historyContainer.innerHTML = `<p class="muted">История заказов пуста</p>`;
+            return;
+        }
+        historyContainer.innerHTML = '';
+        history.forEach(o => {
+            const div = document.createElement('div');
+            div.className = 'order-card';
+            const itemsHtml = o.Items && Array.isArray(o.Items) && o.Items.length > 0 
+                ? o.Items.map(item => `<li>${item.Title || 'Без названия'} x${item.Quantity || 1}</li>`).join('')
+                : '<li>Нет деталей</li>';
+            div.innerHTML = `
+                <h4>Заказ #${o.OrderID || o.id || 'N/A'}</h4>
+                <p><strong>Статус:</strong> ${o.Status || 'Неизвестно'}</p>
+                <p><strong>Стоимость:</strong> ${o.TotalAmount || o.total || 0} BYN</p>
+                <p><strong>Телефон:</strong> ${o.Phone || 'Не указан'}</p>
+                <p><strong>Товары:</strong></p>
+                <ul>${itemsHtml}</ul>
+            `;
+            historyContainer.appendChild(div);
+        });
+        // Добавляем класс scrollable только при необходимости
+        if (history.length > 3) {
+            historyContainer.classList.add('scrollable');
+        } else {
+            historyContainer.classList.remove('scrollable');
+        }
+    } catch (err) {
+        historyContainer.innerHTML = `<p class="muted">Ошибка загрузки истории заказов</p>`;
+    }
+}
 
     // --- Выход ---
     if (logoutBtn) {

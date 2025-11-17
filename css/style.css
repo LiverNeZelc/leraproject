@@ -1183,31 +1183,324 @@ footer {
     border-bottom: none;  /* Убираем границу у последнего */
 }
 
-/* Скролл для контейнеров с заказами (при >3 заказах) */
-#ordersContainer.scrollable,
-#historyContainer.scrollable {
-    max-height: 400px;      /* Максимальная высота */
-    overflow-y: auto;       /* Вертикальный скролл */
-    padding-right: 10px;    /* Отступ для скроллбара */
-    background: linear-gradient(to bottom, #f8f9fa 0%, #e9ecef 100%);  /* Лёгкий градиентный фон */
-    border-radius: 10px;    /* Скругление */
-    margin: 10px 0;         /* Отступы */
-    border: 1px solid #e0e0e0;  /* Тонкая граница */
+/* Стили для контейнеров заказов клиента */
+#ordersContainer, #historyContainer {
+    background: #000; /* Чёрный фон */
+    border: 1px solid #000; /* Чёрная рамка */
+    border-radius: 10px;
+    padding: 1rem;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    max-height: 300px; /* Уменьшено для вмещения на экран */
+    overflow-y: auto; /* Вертикальный скролл */
+    margin-top: 1rem;
 }
 
-#ordersContainer.scrollable::-webkit-scrollbar,
-#historyContainer.scrollable::-webkit-scrollbar {
-    width: 6px;  /* Тонкий скроллбар */
+#ordersContainer::-webkit-scrollbar,
+#historyContainer::-webkit-scrollbar {
+    width: 6px;
+    background: #000; /* Чёрная полоса прокрутки */
 }
 
-#ordersContainer.scrollable::-webkit-scrollbar-track,
-#historyContainer.scrollable::-webkit-scrollbar-track {
-    background: var(--light-gray);  /* Светло-серый трек */
+#ordersContainer::-webkit-scrollbar-thumb,
+#historyContainer::-webkit-scrollbar-thumb {
+    background: var(--primary-color); /* Ползунок остаётся в основном цвете */
     border-radius: 3px;
 }
 
-#ordersContainer.scrollable::-webkit-scrollbar-thumb,
-#historyContainer.scrollable::-webkit-scrollbar-thumb {
-    background: linear-gradient(to bottom, var(--primary-color), var(--secondary-color));  /* Градиентный ползунок */
+#ordersContainer::-webkit-scrollbar-track,
+#historyContainer::-webkit-scrollbar-track {
+    background: #000; /* Чёрная полоса прокрутки */
+}
+
+/* Стили карточек заказов клиента */
+.order-card {
+    background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 50%, var(--accent-color) 100%);
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(139, 69, 19, 0.3);
+    padding: 15px; /* Уменьшено для компактности */
+    margin-bottom: 15px; /* Уменьшено расстояние между карточками */
+    border: 1px solid rgba(210, 105, 30, 0.3);
+    color: var(--white);
+}
+
+.order-card h4 {
+    color: var(--white);
+    margin-bottom: 10px;
+    font-size: 1rem; /* Уменьшен размер текста */
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    font-weight: 600;
+}
+
+.order-card p {
+    color: #f5f5f5;
+    margin-bottom: 6px; /* Уменьшено расстояние между строками */
+    font-size: 0.9rem; /* Уменьшен размер текста */
+    opacity: 0.9;
+}
+
+.order-card ul {
+    list-style-type: none;
+    padding-left: 0;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 10px; /* Уменьшено для компактности */
+    margin-top: 0.5rem;
+    backdrop-filter: blur(5px);
+}
+
+.order-card li {
+    padding: 4px 0; /* Уменьшено расстояние между элементами */
+    border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+    color: #e8e8e8;
+    font-size: 0.85rem; /* Уменьшен размер текста */
+}
+
+.order-card li:last-child {
+    border-bottom: none;
+}
+
+/* Адаптивность для заказов */
+@media (max-width: 768px) {
+    #ordersContainer, #historyContainer {
+        padding: 0.8rem;
+        max-height: 250px; /* Ещё меньше высота для мобильных устройств */
+    }
+
+    .order-card {
+        padding: 10px; /* Ещё меньше отступы */
+    }
+
+    .order-card h4 {
+        font-size: 0.9rem; /* Ещё меньше размер текста */
+    }
+
+    .order-card p {
+        font-size: 0.8rem; /* Ещё меньше размер текста */
+    }
+
+    .order-card ul {
+        padding: 8px; /* Ещё меньше отступы */
+    }
+
+    .order-card li {
+        font-size: 0.75rem; /* Ещё меньше размер текста */
+    }
+}
+
+/* Стили для модального окна администратора */
+.admin-modal {
+    width: 600px;
+    max-width: 90%;
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(15px);
+    -webkit-backdrop-filter: blur(15px);
+    color: #fff;
+    border-radius: 20px;
+    padding: 2rem;
+    position: relative;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6);
+    animation: fadeIn 0.3s ease;
+}
+
+.admin-modal .close-modal {
+    position: absolute;
+    top: 15px;
+    right: 20px;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: #fff;
+    transition: color 0.2s ease;
+}
+
+.admin-modal .close-modal:hover {
+    color: #FFD700;
+}
+
+.admin-header {
+    text-align: center;
+    margin-bottom: 1.5rem;
+}
+
+.admin-header .avatar {
+    font-size: 64px;
+    margin-bottom: 10px;
+    opacity: 0.85;
+}
+
+.admin-header h2 {
+    font-size: 1.8rem;
+    margin-bottom: 0.5rem;
+}
+
+.admin-header p {
+    font-size: 1rem;
+    opacity: 0.85;
+}
+
+.admin-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.admin-btn {
+    padding: 0.8rem;
+    background: linear-gradient(90deg, #8B4513, #D2691E);
+    color: #fff;
+    font-weight: 600;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.admin-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+}
+
+/* Стили для модального окна поиска заказов */
+.issue-modal {
+    width: 600px;
+    max-width: 90%;
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(15px);
+    -webkit-backdrop-filter: blur(15px);
+    color: #fff;
+    border-radius: 20px;
+    padding: 2rem;
+    position: relative;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6);
+    animation: fadeIn 0.3s ease;
+}
+
+.issue-modal .close-modal {
+    position: absolute;
+    top: 15px;
+    right: 20px;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: #fff;
+    transition: color 0.2s ease;
+}
+
+.issue-modal .close-modal:hover {
+    color: #FFD700;
+}
+
+.issue-search {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.issue-search input {
+    flex: 1;
+    padding: 0.8rem;
+    border: 1px solid #ddd;
+    border-radius: 10px;
+    font-size: 1rem;
+}
+
+.issue-search button {
+    padding: 0.8rem 1.5rem;
+    background: linear-gradient(90deg, #8B4513, #D2691E);
+    color: #fff;
+    font-weight: 600;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.issue-search button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+}
+
+/* Контейнер для заказов */
+.orders-container {
+    max-height: 300px; /* Ограничение высоты */
+    overflow-y: auto; /* Вертикальный скролл */
+    background: rgba(0, 0, 0, 0.1);
+    border-radius: 10px;
+    padding: 1rem;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+.orders-container::-webkit-scrollbar {
+    width: 6px;
+}
+
+.orders-container::-webkit-scrollbar-thumb {
+    background: var(--primary-color);
     border-radius: 3px;
+}
+
+.orders-container::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+/* Карточки заказов */
+.order-card {
+    background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 50%, var(--accent-color) 100%);
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(139, 69, 19, 0.3);
+    padding: 15px;
+    margin-bottom: 15px;
+    border: 1px solid rgba(210, 105, 30, 0.3);
+    color: var(--white);
+}
+
+.order-card h4 {
+    color: var(--white);
+    margin-bottom: 10px;
+    font-size: 1rem;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    font-weight: 600;
+}
+
+.order-card p {
+    color: #f5f5f5;
+    margin-bottom: 6px;
+    font-size: 0.9rem;
+    opacity: 0.9;
+}
+
+.order-card ul {
+    list-style-type: none;
+    padding-left: 0;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 10px;
+    margin-top: 0.5rem;
+    backdrop-filter: blur(5px);
+}
+
+.order-card li {
+    padding: 4px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+    color: #e8e8e8;
+    font-size: 0.85rem;
+}
+
+.order-card li:last-child {
+    border-bottom: none;
+}
+
+.order-card .issue-complete-btn {
+    margin-top: 1rem;
+    padding: 0.8rem;
+    background: #4CAF50;
+    color: #fff;
+    font-weight: 600;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.order-card .issue-complete-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
 }

@@ -345,6 +345,53 @@ async function getOrdersByClient(clientId, status=null) {
     return res.rows;
 }
 
+async function getOrdersByPhone(phone, status) {
+    console.log(`Вызов getOrdersByPhone с номером: ${phone}`); // Логируем входной номер телефона
+
+    const query = `
+        SELECT o."OrderID", c."FullName" AS "ClientName", d."Phone", o."Status", o."OrderDate",
+               (SELECT json_agg(json_build_object('Title', b."Title", 'Quantity', oi."Quantity"))
+                FROM "OrderItems" oi
+                JOIN "Books" b ON oi."BookID" = b."BookID"
+                WHERE oi."OrderID" = o."OrderID") AS "Items"
+        FROM "Orders" o
+        JOIN "Deliveries" d ON o."OrderID" = d."OrderID"
+        JOIN "Clients" c ON o."ClientID" = c."ClientID"
+        WHERE REGEXP_REPLACE(d."Phone", '[^0-9]', '', 'g') = $1 AND o."Status" = $2
+        ORDER BY o."OrderDate" DESC
+    `;
+
+    
+
+    const res = await pool.query(query, [phone.replace(/\D/g, ''), status]);
+
+    console.log(`Найдено заказов: ${res.rows.length}`); // Логируем количество найденных заказов
+    return res.rows;
+}
+
+async function getOrdersByPhonePartial(phone, status) {
+    console.log(`Вызов getOrdersByPhonePartial с номером: ${phone}`); // Логируем входной номер телефона
+
+    const query = `
+        SELECT o."OrderID", c."FullName" AS "ClientName", d."Phone", o."Status", o."OrderDate",
+               (SELECT json_agg(json_build_object('Title', b."Title", 'Quantity', oi."Quantity"))
+                FROM "OrderItems" oi
+                JOIN "Books" b ON oi."BookID" = b."BookID"
+                WHERE oi."OrderID" = o."OrderID") AS "Items"
+        FROM "Orders" o
+        JOIN "Deliveries" d ON o."OrderID" = d."OrderID"
+        JOIN "Clients" c ON o."ClientID" = c."ClientID"
+        WHERE REGEXP_REPLACE(d."Phone", '[^0-9]', '', 'g') LIKE $1 AND o."Status" = $2
+        ORDER BY o."OrderDate" DESC
+    `;
+
+  
+
+    const res = await pool.query(query, [`%${phone.replace(/\D/g, '')}%`, status]);
+
+    console.log(`Найдено заказов: ${res.rows.length}`); // Логируем количество найденных заказов
+    return res.rows;
+}
 
 // Новая функция слияния корзин
 async function mergeCarts(oldClientId, newClientId) {
@@ -409,6 +456,21 @@ async function getEmployeeById(id) {
     return res.rows[0];
 }
 
+async function getOrdersByEmployee(employeeId, statusLike) {
+    const res = await pool.query(`
+        SELECT o."OrderID", c."FullName" AS "ClientName", c."Phone", o."Status", o."OrderDate",
+               (SELECT json_agg(json_build_object('Title', b."Title", 'Quantity', oi."Quantity"))
+                FROM "OrderItems" oi
+                JOIN "Books" b ON oi."BookID" = b."BookID"
+                WHERE oi."OrderID" = o."OrderID") AS "Items"
+        FROM "Orders" o
+        JOIN "Clients" c ON o."ClientID" = c."ClientID"
+        WHERE o."EmployeeID" = $1 AND o."Status" LIKE $2
+        ORDER BY o."OrderDate" DESC
+    `, [employeeId, statusLike]);
+    return res.rows;
+}
+
 // --- Экспортируем ---
 module.exports = {
     pool,
@@ -429,4 +491,7 @@ module.exports = {
     addOrderItems,
     authenticateEmployee,
     getEmployeeById,
+    getOrdersByPhone,
+    getOrdersByPhonePartial,
+    getOrdersByEmployee,
 };

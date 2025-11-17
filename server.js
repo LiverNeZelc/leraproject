@@ -24,9 +24,20 @@ app.use(session({
 app.get('/auth', (req, res) => {
     res.render('auth.ejs'); // просто рендерим EJS страницу
 });
-app.get('/account_main', (req, res) => {
-    res.render('index.ejs'); // просто рендерим EJS страницу
+app.get("/account_main", async (req, res) => {
+    let userType = 'guest';
+    if (req.session.userType) userType = req.session.userType;
+
+    // Если гость или сотрудник, не передаем данные для формы оплаты
+    const showPaymentForm = userType === 'client';
+
+    res.render('index.ejs', {
+        clientId: req.session.clientId || null,
+        userType,
+        showPaymentForm
+    });
 });
+
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
@@ -93,8 +104,12 @@ app.get("/api/books/:id", async (req, res) => {
 
 // --- Работа с корзиной ---
 async function getSessionClientId(req) {
-    // Если уже есть ClientID в сессии
-    if (req.session.clientId) return req.session.clientId;
+    if (req.session.userType === 'employee') {
+        throw new Error('No cart for employees');
+    }
+    if (req.session.userId && req.session.userType === 'client') {
+        return req.session.userId;
+    }
     // Создаём гостевого клиента
     const guest = await db.addClient({
         FullName: 'Гость',
@@ -102,16 +117,26 @@ async function getSessionClientId(req) {
         Phone: null,
         Address: null
     });
-    req.session.clientId = guest.ClientID;
-    return req.session.clientId;
+    req.session.userId = guest.ClientID;
+    req.session.userType = 'client';
+    return req.session.userId;
 }
 
 app.get("/api/cart", async (req, res) => {
     try {
+        if (req.session.userType === 'employee') {
+            // Если пользователь — сотрудник, возвращаем заказы напрямую
+            const orders = await db.getOrdersByEmployee(req.session.userId, 'Оплачен%');
+            return res.json(orders);
+        }
+
         const clientId = await getSessionClientId(req);
         const cart = await db.getCartByClient(clientId);
         res.json(cart);
     } catch(err) {
+        if (err.message === 'No cart for employees') {
+            return res.status(403).json({ error: "Доступ запрещен для сотрудников" });
+        }
         console.error(err);
         res.status(500).json({ error: "Ошибка получения корзины" });
     }
@@ -125,6 +150,9 @@ app.post("/api/cart", async (req, res) => {
         const cart = await db.getCartByClient(clientId);
         res.json(cart);
     } catch(err) {
+        if (err.message === 'No cart for employees') {
+            return res.status(403).json({ error: "Доступ запрещен для сотрудников" });
+        }
         console.error(err);
         res.status(500).json({ error: "Ошибка добавления в корзину" });
     }
@@ -137,6 +165,9 @@ app.delete("/api/cart/:bookId", async (req,res)=>{
         const cart = await db.getCartByClient(clientId);
         res.json(cart);
     } catch(err) {
+        if (err.message === 'No cart for employees') {
+            return res.status(403).json({ error: "Доступ запрещен для сотрудников" });
+        }
         console.error(err);
         res.status(500).json({ error: "Ошибка удаления из корзины" });
     }
@@ -145,11 +176,14 @@ app.delete("/api/cart/:bookId", async (req,res)=>{
 // --- API для карт (GET и POST — без дубликатов) ---
 app.get("/api/cards", async (req, res) => {
     try {
+        if (req.session.userType !== 'client') {
+            return res.status(403).json({ error: "Доступ запрещен" });
+        }
         const clientId = await getSessionClientId(req);
         const user = await db.getClientById(clientId);
         if (!user || !user.Email) return res.status(401).json({ error: "Авторизуйтесь" });
         const cards = await cardsDb.getCardsByClient(clientId);
-        res.status(200).json(cards || []);  // Явно 200 + пустой массив если нет
+        res.status(200).json(cards || []); // Explicit 200 + empty array if none
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: "Ошибка получения карт" });
@@ -158,6 +192,9 @@ app.get("/api/cards", async (req, res) => {
 
 app.post("/api/cards", async (req, res) => {
     try {
+        if (req.session.userType !== 'client') {
+            return res.status(403).json({ error: "Доступ запрещен" });
+        }
         const { cardNumber, expiry, cvv } = req.body;
         const clientId = await getSessionClientId(req);
         const user = await db.getClientById(clientId);
@@ -170,28 +207,35 @@ app.post("/api/cards", async (req, res) => {
         res.status(500).json({ error: "Ошибка добавления карты" });
     }
 });
-
 // --- Создание заказа (новый эндпоинт) ---
 app.post("/api/orders/create", async (req, res) => {
     try {
-        const { phone, address, delivery, cardId, total } = req.body;
+        // Доступ только для зарегистрированных клиентов
+        if (req.session.userType !== 'client') {
+            return res.status(403).json({ error: "Доступ запрещен" });
+        }
+
         const clientId = await getSessionClientId(req);
         const user = await db.getClientById(clientId);
-        if (!user || !user.Email) return res.status(401).json({ error: "Авторизуйтесь для заказа" });  // Исправлено
+
+        // Гость не может оформить заказ
+        if (!user || !user.Email) {
+            return res.status(403).json({ error: "Гостям запрещено оформлять заказ" });
+        }
+
+        const { phone, address, delivery, cardId, total } = req.body;
 
         // Проверка карты
         const card = await cardsDb.getCardById(cardId);
         if (!card) return res.status(400).json({ error: "Карта не найдена" });
         if (card.Balance < total) return res.status(400).json({ error: "Недостаточно средств на карте" });
 
-        // Создание заказа (без phone/address)
+        // Создание заказа
         const order = await db.createOrder(clientId, null, total, "Новый");
-
-        // Добавление items из корзины (исправить: перед clear)
         const cartBeforeClear = await db.getCartByClient(clientId);
-        await db.addOrderItems(order.OrderID, cartBeforeClear); // Новое
+        await db.addOrderItems(order.OrderID, cartBeforeClear);
 
-        // Добавление доставки (с phone)
+        // Доставка
         let deliveryMethod = 'Самовывоз';
         let status = 'Оплачен, ожидает получения';
         switch (delivery) {
@@ -199,15 +243,15 @@ app.post("/api/orders/create", async (req, res) => {
             case '5km': deliveryMethod = 'Доставка 5км'; status = 'Оплачен, ожидается доставка'; break;
             case 'over5km': deliveryMethod = 'Доставка >5км'; status = 'Оплачен, ожидается доставка'; break;
         }
-        await db.addDelivery(order.OrderID, deliveryMethod, address, 'Ожидает', null, null, phone); // + phone
+        await db.addDelivery(order.OrderID, deliveryMethod, address, 'Ожидает', null, null, phone);
 
-        // Списание с карты (исправить: после проверки)
+        // Списываем с карты
         await cardsDb.updateCardBalance(cardId, card.Balance - total);
 
-        // Обновление статуса
+        // Обновляем статус
         await db.updateOrderStatus(order.OrderID, status);
 
-        // Очистка корзины
+        // Очищаем корзину
         await db.clearCart(clientId);
 
         res.json({
@@ -215,11 +259,13 @@ app.post("/api/orders/create", async (req, res) => {
             orderId: order.OrderID,
             items: cartBeforeClear.map(item => ({ Title: item.Title, Quantity: item.Quantity, Price: item.Price }))
         });
+
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: "Ошибка создания заказа" });
     }
 });
+
 
 // Checkout (устаревший, теперь перенаправляет на новый)
 app.post("/api/checkout", async (req,res)=>{
@@ -253,21 +299,38 @@ app.post("/api/auth/register", async (req, res) => {
 });
 
 // --- Вход ---
+// --- Вход (обновленный для клиентов и сотрудников) ---
 app.post("/api/auth/login", async (req, res) => {
     try {
         const { email, password } = req.body;
         if (!email || !password) return res.status(400).json({ error: "Все поля обязательны" });
-        const client = await db.authenticateClient(email, password);
-        if (!client) return res.status(401).json({ error: "Неверный email или пароль" });
-        // Сохранение старой корзины гостя
-        const oldClientId = req.session.clientId;
-        req.session.clientId = client.ClientID;
-        // Слияние корзины гостя
-        if (oldClientId && oldClientId !== client.ClientID) {
-            await db.mergeCarts(oldClientId, client.ClientID);
-            await db.clearCart(oldClientId); // Опционально
+
+        // Проверяем клиента
+        let user = await db.authenticateClient(email, password);
+        let userType = 'client';
+        let userIdField = 'ClientID';
+
+        // Если не клиент, проверяем сотрудника
+        if (!user) {
+            user = await db.authenticateEmployee(email, password);
+            userType = 'employee';
+            userIdField = 'EmployeeID';
         }
-        res.json({ message: "Вход успешен", clientId: client.ClientID });
+
+        if (!user) return res.status(401).json({ error: "Неверный email или пароль" });
+
+        // Сохранение старой корзины гостя (только для клиентов)
+        const oldClientId = req.session.userId;
+        req.session.userId = user[userIdField];
+        req.session.userType = userType;
+
+        // Сливаем корзину только если текущий пользователь — клиент
+        if (userType === 'client' && oldClientId && oldClientId !== user.ClientID) {
+            await db.mergeCarts(oldClientId, user.ClientID);
+            await db.clearCart(oldClientId);
+        }
+
+        res.json({ message: "Вход успешен", userId: user[userIdField], userType });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: "Ошибка входа" });
@@ -276,13 +339,19 @@ app.post("/api/auth/login", async (req, res) => {
 
 // --- Получить текущего клиента ---
 // api/me
+// --- Получить текущего пользователя (обновленный для типа) ---
 app.get("/api/me", async (req,res)=>{
     try {
-        if (!req.session.clientId) return res.status(401).json({ error: "Not authorized" });
-        const client = await db.getClientById(req.session.clientId);
-        // Гость = Email null → значит не авторизован настоящий
-        const isGuest = !client.Email;
-        res.json({ ...client, isGuest });
+        if (!req.session.userId) return res.status(401).json({ error: "Not authorized" });
+        let user;
+        if (req.session.userType === 'employee') {
+            user = await db.getEmployeeById(req.session.userId);
+        } else {
+            user = await db.getClientById(req.session.userId);
+        }
+        if (!user) return res.status(404).json({ error: "User not found" });
+        const isGuest = req.session.userType !== 'client' && req.session.userType !== 'employee';
+        res.json({ ...user, userType: req.session.userType, isGuest });
     } catch(err) {
         console.error(err);
         res.status(500).json({ error: "Error" });
@@ -300,62 +369,104 @@ app.post("/api/auth/logout", (req,res)=>{
 // API для заказов
 app.get("/api/orders/current", async (req, res) => {
     try {
+        if (req.session.userType !== 'client') {
+            return res.status(403).json({ error: "Доступ запрещен" });
+        }
         const clientId = await getSessionClientId(req);
-        console.log('Fetching current orders for clientId:', clientId);  // Logging для дебага
-        
-        // Raw query с LIKE
-        const ordersResult = await db.pool.query(
-            `SELECT * FROM "Orders" WHERE "ClientID"=$1 AND "Status" LIKE $2`,
-            [clientId, 'Оплачен%']
-        );
+        const user = await db.getClientById(clientId);
+        if (!user.Email) {
+            return res.status(403).json({ error: "Доступ запрещен для гостей" });
+        }
+        const ordersResult = await db.pool.query(`
+            SELECT o.*, d."Phone"
+            FROM "Orders" o
+            LEFT JOIN "Deliveries" d ON o."OrderID" = d."OrderID"
+            WHERE o."ClientID" = $1 AND o."Status" LIKE $2
+        `, [clientId, 'Оплачен%']);
         const orders = ordersResult.rows;
-        console.log('Found orders:', orders.length);  // Logging
-        
-        // Добавляем items с try-catch на каждый order (fallback на [] если ошибка)
+
         const ordersWithItems = await Promise.all(orders.map(async (o) => {
-            try {
-                const items = await db.getOrderItems(o.OrderID);
-                return { ...o, Items: items || [] };
-            } catch (itemErr) {
-                console.error('Error loading items for order', o.OrderID, itemErr);
-                return { ...o, Items: [] };  // Fallback
-            }
+            const items = await db.getOrderItems(o.OrderID);
+            return { ...o, Items: items || [] };
         }));
-        
-        res.status(200).json(ordersWithItems);  // Всегда 200, даже если пусто
+        res.status(200).json(ordersWithItems);
     } catch (err) {
-        console.error('Full error in /api/orders/current:', err);  // Полный лог
+        console.error(err);
         res.status(500).json({ error: "Ошибка загрузки заказов" });
     }
 });
 
 app.get("/api/orders/history", async (req, res) => {
     try {
+        if (req.session.userType !== 'client') {
+            return res.status(403).json({ error: "Доступ запрещен" });
+        }
         const clientId = await getSessionClientId(req);
-        console.log('Fetching history orders for clientId:', clientId);  // Logging
-        
-        const ordersResult = await db.pool.query(
-            `SELECT * FROM "Orders" WHERE "ClientID"=$1 AND "Status" = $2 ORDER BY "OrderDate" DESC`,
-            [clientId, 'Завершён']
-        );
+        const user = await db.getClientById(clientId);
+        if (!user.Email) {
+            return res.status(403).json({ error: "Доступ запрещен для гостей" });
+        }
+        const ordersResult = await db.pool.query(`
+            SELECT o.*, d."Phone"
+            FROM "Orders" o
+            LEFT JOIN "Deliveries" d ON o."OrderID" = d."OrderID"
+            WHERE o."ClientID" = $1 AND o."Status" = $2
+            ORDER BY o."OrderDate" DESC
+        `, [clientId, 'Завершён']);
         const orders = ordersResult.rows;
-        console.log('Found history orders:', orders.length);  // Logging
-        
-        // Добавляем Items для каждого заказа (fallback на [])
+
         const ordersWithItems = await Promise.all(orders.map(async (o) => {
-            try {
-                const items = await db.getOrderItems(o.OrderID);
-                return { ...o, Items: items || [] };
-            } catch (itemErr) {
-                console.error('Error loading items for history order', o.OrderID, itemErr);
-                return { ...o, Items: [] };
-            }
+            const items = await db.getOrderItems(o.OrderID);
+            return { ...o, Items: items || [] };
         }));
-        
         res.status(200).json(ordersWithItems);
     } catch (err) {
-        console.error('Full error in /api/orders/history:', err);
+        console.error(err);
         res.status(500).json({ error: "Ошибка загрузки истории" });
+    }
+});
+
+// Поиск заказов по номеру телефона
+app.get('/api/admin/orders', async (req, res) => {
+    try {
+        if (req.session.userType !== 'employee') {
+            return res.status(403).json({ error: 'Доступ запрещен' });
+        }
+
+        const { phone } = req.query;
+        if (!phone) {
+            return res.status(400).json({ error: 'Номер телефона обязателен' });
+        }
+
+        console.log(`Поиск заказов по номеру телефона: ${phone}`); // Логируем номер телефона для отладки
+
+        // Используем функцию getOrdersByPhone из db.js
+        const orders = await db.getOrdersByPhonePartial(phone, 'Оплачен, ожидает получения');
+        if (!orders || orders.length === 0) {
+            console.log(`Заказы не найдены для номера: ${phone}`); // Логируем отсутствие заказов
+            return res.status(404).json({ error: 'Заказы не найдены' });
+        }
+
+        console.log(`Найдено заказов: ${orders.length}`); // Логируем количество найденных заказов
+        res.json(orders);
+    } catch (err) {
+        console.error('Ошибка получения заказов:', err);
+        res.status(500).json({ error: 'Ошибка получения заказов' });
+    }
+});
+
+// Завершение заказа
+app.post('/api/admin/orders/:orderId/complete', async (req, res) => {
+    try {
+        if (req.session.userType !== 'employee') {
+            return res.status(403).json({ error: 'Доступ запрещен' });
+        }
+        const { orderId } = req.params;
+        await db.updateOrderStatus(orderId, 'Завершён');
+        res.json({ message: 'Заказ завершён' });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Ошибка завершения заказа' });
     }
 });
 
@@ -367,6 +478,8 @@ app.use((req,res)=>{
     // Передаем clientId (если есть) в шаблон
     res.render('index.ejs', { clientId: req.session.clientId || null });
 });
+
+
 
 // --- Запуск сервера ---
 app.listen(PORT, () => console.log(`🚀 Server running at http://localhost:${PORT}`));

@@ -240,5 +240,38 @@
     </div>
 </div>
 
+<!-- MODAL ADMIN -->
+<div id="adminModal" class="modal">
+    <div class="modal-content admin-modal glass">
+        <span class="close-modal">&times;</span>
+        <div class="admin-header">
+            <i class="fas fa-user-shield avatar"></i>
+            <h2 id="adminName">Имя сотрудника</h2>
+            <p id="adminEmail" class="acc-email">email@example.com</p>
+        </div>
+        <div class="admin-actions">
+            <button id="issueModeBtn" class="admin-btn">Режим выдачи</button>
+            <button id="deliveryModeBtn" class="admin-btn">Режим доставки</button>
+            <button id="adminPanelBtn" class="admin-btn">Админ панель</button>
+            <button id="adminLogoutBtn" class="logout-btn full">Выход из аккаунта</button>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL ISSUE MODE -->
+<div id="issueModeModal" class="modal">
+    <div class="modal-content issue-modal glass">
+        <span class="close-modal">&times;</span>
+        <h2>Режим выдачи</h2>
+        <div class="issue-search">
+            <input type="text" id="issuePhoneInput" placeholder="Введите номер телефона">
+            <button id="issueSearchBtn" class="admin-btn">Найти</button>
+        </div>
+        <div id="issueOrdersContainer" class="orders-container">
+            <!-- Заказы будут добавлены через JavaScript -->
+        </div>
+    </div>
+</div>
+
 </body>
 </html>

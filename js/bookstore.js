@@ -35,23 +35,32 @@ async function loadBooksFromServer(params = {}) {
     displayBooks(books);
 }
 
-async function fetchCart() {
+async function fetchCart(silent = false) {
     const res = await fetch('/api/cart', { credentials: 'include' });
+    if (res.status === 403) {
+        if (!silent) alert('Перейдите на аккаунт покупателя');
+        return [];
+    }
     if (!res.ok) {
-        console.error('Ошибка загрузки корзины:', res.status);
-        return []; // Возвращаем пустой массив на ошибку
+        if (!silent) console.error('Ошибка загрузки корзины:', res.status);
+        return [];
     }
     const data = await res.json();
     cart = Array.isArray(data) ? data : [];
     return cart;
 }
 
+
 async function updateCartCount() {
-    await fetchCart();
-    const cartCount = document.querySelector('.cart-count');
-    if (cartCount) {
-        const totalItems = cart.reduce((sum, item) => sum + (item.Quantity || 0), 0);
-        cartCount.textContent = totalItems;
+    try {
+        await fetchCart(true); // передаем флаг "silent" — не показывать уведомления
+        const cartCount = document.querySelector('.cart-count');
+        if (cartCount) {
+            const totalItems = cart.reduce((sum, item) => sum + (item.Quantity || 0), 0);
+            cartCount.textContent = totalItems;
+        }
+    } catch (err) {
+        console.error('Ошибка обновления корзины:', err);
     }
 }
 
@@ -62,6 +71,10 @@ async function addToCart(bookId) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ bookId })
     });
+    if (res.status === 403) {
+        alert('Перейдите на аккаунт покупателя');
+        return;
+    }
     if (!res.ok) {
         showNotification('Ошибка добавления в корзину');
         return;
@@ -72,6 +85,10 @@ async function addToCart(bookId) {
 
 async function removeFromCart(bookId) {
     const res = await fetch(`/api/cart/${bookId}`, { method: 'DELETE', credentials: 'include' });
+    if (res.status === 403) {
+        alert('Перейдите на аккаунт покупателя');
+        return;
+    }
     if (!res.ok) {
         showNotification('Ошибка удаления из корзины');
         return;
@@ -120,23 +137,7 @@ function createOrderModal() {
                     <select id="orderCard" required>
                         <option value="">Выберите карту</option>
                     </select>
-                    <button type="button" id="addCardBtn">Добавить новую карту</button>
                     <div id="balanceWarning" class="balance-warning" style="display:none;"></div>
-                </div>
-                <div id="newCardFields" style="display:none;">
-                    <div class="form-group">
-                        <label>Номер карты:</label>
-                        <input type="text" id="newCardNumber" placeholder="1234 5678 9012 3456" maxlength="19">
-                    </div>
-                    <div class="form-group">
-                        <label>Срок действия (MM/YY):</label>
-                        <input type="text" id="newCardExpiry" placeholder="12/25" maxlength="5">
-                    </div>
-                    <div class="form-group">
-                        <label>CVV:</label>
-                        <input type="text" id="newCardCVV" placeholder="123" maxlength="3">
-                    </div>
-                    <button type="button" id="saveNewCardBtn">Сохранить карту</button>
                 </div>
                 <div class="order-total">
                     <p>Сумма товаров: <span id="cartTotalAmount">0 BYN</span></p>
@@ -177,13 +178,7 @@ function attachOrderEvents() {
         orderCardSelect.addEventListener('change', checkBalance);
     }
     
-    // Кнопка добавления карты
-    const addCardBtn = document.getElementById('addCardBtn');
-    if (addCardBtn) {
-        addCardBtn.removeEventListener('click', toggleNewCardForm);
-        addCardBtn.addEventListener('click', toggleNewCardForm);
-    }
-    
+
     // Кнопка сохранения новой карты
     const saveNewCardBtn = document.getElementById('saveNewCardBtn');
     if (saveNewCardBtn) {
@@ -268,26 +263,48 @@ function closeOrderModal() {
 // Checkout логика
 // ------------------------------
 async function handleCheckout() {
-    // Проверка авторизации
     try {
-        const res = await fetch('/api/me', { credentials: 'include' });
-        if (!res.ok) {
+        // 1. Сначала проверяем авторизацию
+        const meRes = await fetch('/api/me', { credentials: 'include' });
+        if (!meRes.ok) {
             showNotification('Авторизуйтесь для оформления заказа');
-            setTimeout(() => window.location.href = '/auth', 2000);
+            setTimeout(() => window.location.href = '/auth', 1500);
             return;
         }
-        const user = await res.json();
-        if (user.isGuest) {
+
+        const user = await meRes.json();
+
+        // Гость или сотрудник — сразу блокируем
+        if (user.isGuest || user.userType !== 'client') {
             showNotification('Авторизуйтесь для оформления заказа');
-            setTimeout(() => window.location.href = '/auth', 2000);
+            setTimeout(() => window.location.href = '/auth', 1500);
             return;
         }
-        // Если авторизован, открываем модалку заказа
+
+        // 2. Только после успешной проверки авторизации проверяем корзину
+        const cartRes = await fetch('/api/cart', { credentials: 'include' });
+        if (cartRes.status === 403) {
+            showNotification('Доступ запрещён');
+            return;
+        }
+        if (!cartRes.ok) {
+            showNotification('Не удалось загрузить корзину');
+            return;
+        }
+
+        const cartData = await cartRes.json();
+        if (!Array.isArray(cartData) || cartData.length === 0) {
+            showNotification('Корзина пуста');
+            return;
+        }
+
+        // 3. Только теперь открываем модалку — никаких мельканий!
         await openOrderModal();
+
     } catch (err) {
         console.error(err);
         showNotification('Ошибка проверки авторизации');
-        setTimeout(() => window.location.href = '/auth', 2000);
+        setTimeout(() => window.location.href = '/auth', 1500);
     }
 }
 
@@ -428,6 +445,12 @@ async function submitOrder(e) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ phone, address, delivery, cardId, total })
         });
+        if (res.status === 403 || res.status === 401) {
+            showNotification('Доступ запрещен');
+            closeOrderModal();
+            setTimeout(() => window.location.href = '/auth', 2000);
+            return;
+        }
         if (!res.ok) {
             const result = await res.json();
             return showNotification(result.error || 'Ошибка оформления заказа');
@@ -440,7 +463,7 @@ async function submitOrder(e) {
         await updateCartCount();
         await displayCartItems();
         closeCart();
-        // Переходим в accountModal на вкладку orders
+        // Go to accountModal on orders tab
         if (window.openAccountModal) window.openAccountModal();
         if (window.loadOrders) window.loadOrders();
     } catch (err) {
@@ -448,7 +471,6 @@ async function submitOrder(e) {
         showNotification('Ошибка оформления заказа');
     }
 }
-
 // ------------------------------
 // Отображение каталога
 // ------------------------------
