@@ -211,45 +211,64 @@ function toggleNewCardForm() {
 // ------------------------------
 async function handleCheckout() {
     try {
-        // 1. Сначала проверяем авторизацию
+        console.log('📝 [DEBUG] handleCheckout - начало проверки...');
+        
+        // 1. Проверяем авторизацию и роль ДО всего
         const meRes = await fetch('/api/me', { credentials: 'include' });
         if (!meRes.ok) {
+            console.log('❌ [DEBUG] handleCheckout - не авторизован');
             showNotification('Авторизуйтесь для оформления заказа');
             setTimeout(() => window.location.href = '/auth', 1500);
             return;
         }
 
         const user = await meRes.json();
+        console.log('👤 [DEBUG] handleCheckout - пользователь:', user);
 
-        // Гость или сотрудник — сразу блокируем
-        if (user.isGuest || user.userType !== 'client') {
-            showNotification('Авторизуйтесь для оформления заказа');
-            setTimeout(() => window.location.href = '/auth', 1500);
+        // Блокируем гостей
+        if (user.isGuest) {
+            console.log('❌ [DEBUG] handleCheckout - гостевой аккаунт');
+            showNotification('Гостям запрещено оформлять заказы. Пожалуйста, зарегистрируйтесь');
+            setTimeout(() => window.location.href = '/auth', 2000);
+            return;
+        }
+        
+        // Блокируем администраторов
+        if (user.userType === 'employee') {
+            console.log('❌ [DEBUG] handleCheckout - администратор');
+            showNotification('Администраторы не могут оформлять заказы');
             return;
         }
 
-        // 2. Только после успешной проверки авторизации проверяем корзину
+        console.log('✅ [DEBUG] handleCheckout - авторизация успешна, проверяю корзину...');
+
+        // 2. Только ПОСЛЕ проверки авторизации проверяем корзину
         const cartRes = await fetch('/api/cart', { credentials: 'include' });
         if (cartRes.status === 403) {
+            console.log('❌ [DEBUG] handleCheckout - доступ к корзине запрещен');
             showNotification('Доступ запрещён');
             return;
         }
         if (!cartRes.ok) {
+            console.log('❌ [DEBUG] handleCheckout - ошибка загрузки корзины');
             showNotification('Не удалось загрузить корзину');
             return;
         }
 
         const cartData = await cartRes.json();
         if (!Array.isArray(cartData) || cartData.length === 0) {
+            console.log('❌ [DEBUG] handleCheckout - корзина пуста');
             showNotification('Корзина пуста');
             return;
         }
 
-        // 3. Только теперь открываем модалку — никаких мельканий!
+        console.log('✅ [DEBUG] handleCheckout - все проверки пройдены, открываю форму...');
+
+        // 3. ТОЛЬКО ТЕПЕРЬ открываем форму!
         await openOrderModal();
 
     } catch (err) {
-        console.error(err);
+        console.error('❌ [DEBUG] handleCheckout - критическая ошибка:', err);
         showNotification('Ошибка проверки авторизации');
         setTimeout(() => window.location.href = '/auth', 1500);
     }
@@ -257,71 +276,145 @@ async function handleCheckout() {
 
 async function openOrderModal() {
     try {
-        // Создаём модалку если нет
-        if (!document.getElementById('orderModal')) createOrderModal();
+        console.log('📝 [DEBUG] openOrderModal - начало открытия...');
+        
+        // Удаляем старую модалку если была
+        const oldModal = document.getElementById('orderModal');
+        if (oldModal) {
+            console.log('📝 [DEBUG] openOrderModal - удаляю старую модалку...');
+            oldModal.remove();
+        }
+        
+        // Создаём НОВУЮ модалку
+        console.log('📝 [DEBUG] openOrderModal - создаю новую модалку...');
+        createOrderModal();
+        
         const modal = document.getElementById('orderModal');
-        await loadUserDataAndCards(); // Загружаем данные пользователя и карту
-        calculateTotal(); // Расчёт итога
-        // Плейсхолдер для номера (обновится после submit)
+        
+        console.log('📝 [DEBUG] openOrderModal - загружаю данные пользователя и карты...');
+        await loadUserDataAndCards();
+        
+        calculateTotal();
+        
         const orderNumber = document.getElementById('orderNumber');
         if (orderNumber) orderNumber.textContent = 'Автогенерация (будет присвоен после оплаты)';
+        
+        console.log('✅ [DEBUG] openOrderModal - показываю модалку...');
         modal.style.display = 'block';
-        attachOrderEvents(); // Прикрепляем события после открытия
+        attachOrderEvents();
+        
     } catch (err) {
-        console.error('Ошибка открытия модалки заказа:', err);
+        console.error('❌ [DEBUG] openOrderModal - критическая ошибка:', err);
         showNotification('Ошибка открытия формы заказа');
     }
 }
 
+function closeOrderModal() {
+    const modal = document.getElementById('orderModal');
+    if (modal) {
+        modal.style.display = 'none';
+        // Дополнительно удаляем из DOM через небольшую задержку
+        setTimeout(() => {
+            if (modal && modal.parentElement) {
+                modal.remove();
+            }
+        }, 300);
+    }
+}
+
 async function loadUserDataAndCards() {
-    const userRes = await fetch('/api/me', { credentials: 'include' });
-    if (!userRes.ok) {
-        showNotification('Ошибка загрузки профиля');
-        setTimeout(() => window.location.href = '/auth', 2000);
-        return;
-    }
-    const user = await userRes.json();
-    const orderName = document.getElementById('orderName');
-    if (orderName) orderName.textContent = user.FullName || 'Гость';
-    
-    // Загружаем карты
-    const cardsRes = await fetch('/api/cards', { credentials: 'include' });
-    let cards = [];
-    if (cardsRes.ok) {
-        const cardsData = await cardsRes.json();
-        // Проверка: если cardsData — объект с error, используем []
-        if (cardsData && typeof cardsData === 'object' && cardsData.error) {
-            cards = [];
-            showNotification(cardsData.error);
+    try {
+        // Проверяем авторизацию ПЕРЕД загрузкой карт
+        const userRes = await fetch('/api/me', { credentials: 'include' });
+        if (!userRes.ok) {
+            console.log('❌ [DEBUG] loadUserDataAndCards - не авторизован (статус:', userRes.status, ')');
+            showNotification('Ошибка загрузки профиля - требуется авторизация');
+            closeOrderModal();
             setTimeout(() => window.location.href = '/auth', 2000);
-        } else {
-            cards = Array.isArray(cardsData) ? cardsData : [];
+            return;
         }
-    } else {
-        const errorData = await cardsRes.json().catch(() => ({}));
-        showNotification(errorData.error || 'Ошибка загрузки карт');
+        
+        const user = await userRes.json();
+        console.log('👤 [DEBUG] loadUserDataAndCards - user:', user);
+        
+        // Проверяем, что это не гость и не сотрудник
+        if (user.isGuest || user.userType !== 'client') {
+            console.log('❌ [DEBUG] loadUserDataAndCards - недопустимый тип пользователя:', user.userType);
+            showNotification('Ошибка: некорректный тип пользователя');
+            closeOrderModal();
+            setTimeout(() => window.location.href = '/auth', 2000);
+            return;
+        }
+        
+        const orderName = document.getElementById('orderName');
+        if (orderName) orderName.textContent = user.FullName || 'Пользователь';
+        
+        // Загружаем карты
+        console.log('📝 [DEBUG] loadUserDataAndCards - загружаю карты...');
+        const cardsRes = await fetch('/api/cards', { credentials: 'include' });
+        
+        console.log('📥 [DEBUG] loadUserDataAndCards - статус ответа карт:', cardsRes.status);
+        
+        let cards = [];
+        if (cardsRes.status === 401) {
+            console.log('❌ [DEBUG] loadUserDataAndCards - 401 при загрузке карт - требуется повторная авторизация');
+            showNotification('Требуется авторизация!!!');
+            closeOrderModal();
+            setTimeout(() => window.location.href = '/auth', 2000);
+            return;
+        }
+        
+        if (cardsRes.ok) {
+            const cardsData = await cardsRes.json();
+            if (cardsData && typeof cardsData === 'object' && cardsData.error) {
+                console.log('⚠️ [DEBUG] loadUserDataAndCards - ошибка от сервера:', cardsData.error);
+                cards = [];
+                showNotification(cardsData.error);
+            } else {
+                cards = Array.isArray(cardsData) ? cardsData : [];
+                console.log('✅ [DEBUG] loadUserDataAndCards - загружено карт:', cards.length);
+            }
+        } else {
+            const errorData = await cardsRes.json().catch(() => ({}));
+            console.log('❌ [DEBUG] loadUserDataAndCards - ошибка статуса:', cardsRes.status, errorData);
+            showNotification(errorData.error || 'Ошибка загрузки карт');
+        }
+        
+        const select = document.getElementById('orderCard');
+        if (select) {
+            select.innerHTML = '<option value="">Выберите карту</option>';
+            if (cards.length > 0) {
+                cards.forEach(card => {
+                    const option = document.createElement('option');
+                    option.value = card.CardID;
+                    option.dataset.balance = card.Balance;
+                    option.textContent = `**** **** **** ${card.Last4Digits} (Баланс: ${card.Balance} BYN)`;
+                    select.appendChild(option);
+                });
+                console.log('✅ [DEBUG] loadUserDataAndCards - карты добавлены в селект');
+            } else {
+                console.log('⚠️ [DEBUG] loadUserDataAndCards - карт не найдено');
+                showNotification('⚠️ У вас нет сохранённых карт');
+            }
+        }
+        
+        // Загружаем корзину для суммы
+        console.log('📝 [DEBUG] loadUserDataAndCards - загружаю корзину...');
+        await fetchCart();
+        const cartTotalAmount = document.getElementById('cartTotalAmount');
+        if (cartTotalAmount) {
+            const total = cart.reduce((sum, item) => sum + item.Price * item.Quantity, 0);
+            cartTotalAmount.textContent = `${total} BYN`;
+            console.log('✅ [DEBUG] loadUserDataAndCards - сумма корзины:', total);
+        }
+        checkBalance();  // Проверка после загрузки
+        
+    } catch (err) {
+        console.error('❌ [DEBUG] loadUserDataAndCards - критическая ошибка:', err);
+        showNotification('Ошибка загрузки данных заказа');
+        closeOrderModal();
         setTimeout(() => window.location.href = '/auth', 2000);
     }
-    
-    const select = document.getElementById('orderCard');
-    if (select) {
-        select.innerHTML = '<option value="">Выберите карту</option>';
-        cards.forEach(card => {
-            const option = document.createElement('option');
-            option.value = card.CardID;
-            option.dataset.balance = card.Balance;
-            option.textContent = `**** **** **** ${card.Last4Digits} (Баланс: ${card.Balance} BYN)`;
-            select.appendChild(option);
-        });
-    }
-    
-    // Загружаем корзину для суммы
-    await fetchCart();
-    const cartTotalAmount = document.getElementById('cartTotalAmount');
-    if (cartTotalAmount) {
-        cartTotalAmount.textContent = `${cart.reduce((sum, item) => sum + item.Price * item.Quantity, 0)} BYN`;
-    }
-    checkBalance();  // Проверка после загрузки
 }
 
 function calculateTotal() {
@@ -567,10 +660,30 @@ function closeBookModal() {
 // Корзина
 // ------------------------------
 async function openCart() {
-    const cartModal = document.getElementById('cartModal');
-    if (cartModal) {
-        await displayCartItems();
-        cartModal.style.display = 'block';
+    try {
+        // Проверяем, что это не администратор
+        const meRes = await fetch('/api/me', { credentials: 'include' });
+        if (!meRes.ok) {
+            showNotification('Ошибка проверки прав доступа');
+            return;
+        }
+        
+        const user = await meRes.json();
+        
+        // Блокируем корзину для администраторов
+        if (user.userType === 'employee') {
+            showNotification('Администраторы не могут использовать корзину');
+            return;
+        }
+        
+        const cartModal = document.getElementById('cartModal');
+        if (cartModal) {
+            await displayCartItems();
+            cartModal.style.display = 'block';
+        }
+    } catch (err) {
+        console.error('Ошибка при открытии корзины:', err);
+        showNotification('Ошибка при открытии корзины');
     }
 }
 

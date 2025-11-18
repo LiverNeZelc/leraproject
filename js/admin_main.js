@@ -289,6 +289,7 @@ function openMapModal(order) {
     }
 
     if (completeBtn) {
+        // Удаляем старый обработчик события если был
         completeBtn.onclick = async () => {
             try {
                 const res = await fetch(`/api/admin/orders/${order.OrderID}/complete`, {
@@ -296,15 +297,27 @@ function openMapModal(order) {
                     credentials: 'include',
                     headers: { 'Content-Type': 'application/json' },
                 });
+                
                 if (!res.ok) throw new Error('Ошибка завершения доставки');
+                
+                console.log('✅ [DEBUG] Заказ доставлен, удаляю из контейнера');
                 showNotification('Заказ доставлен');
+                
+                // Закрываем модалку
                 mapModal.style.display = 'none';
 
-                const orderCard = document.querySelector(`.order-card[data-order-id="${order.OrderID}"]`);
-                if (orderCard) {
-                    orderCard.remove();
-                } else {
-                    console.warn(`⚠️ [DEBUG] Элемент .order-card[data-order-id="${order.OrderID}"] не найден`);
+                // ГЛАВНОЕ: сразу ищем и удаляем карточку заказа из контейнера
+                const ordersContainer = document.getElementById('deliveryOrdersContainer');
+                if (ordersContainer) {
+                    // Ищем все карточки с этим заказом
+                    const orderCards = ordersContainer.querySelectorAll('.order-card');
+                    orderCards.forEach(card => {
+                        // Проверяем, содержит ли карточка номер этого заказа
+                        if (card.innerHTML.includes(`Заказ #${order.OrderID}`)) {
+                            console.log(`🗑️ [DEBUG] Удаляю карточку заказа #${order.OrderID}`);
+                            card.remove();
+                        }
+                    });
                 }
             } catch (err) {
                 console.error(err);
