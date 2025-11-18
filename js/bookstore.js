@@ -137,30 +137,51 @@ function createOrderModal() {
                     <select id="orderCard" required>
                         <option value="">Выберите карту</option>
                     </select>
-                    <div id="balanceWarning" class="balance-warning" style="display:none;"></div>
+                    <button type="button" id="addNewCardBtn">Добавить новую карту</button>
+                </div>
+                <div id="newCardFields" style="display:none;">
+                    <div class="form-group">
+                        <label>Номер карты:</label>
+                        <input type="text" id="newCardNumber" placeholder="1234 5678 9012 3456" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Срок действия (MM/YY):</label>
+                        <input type="text" id="newCardExpiry" placeholder="12/25" required>
+                    </div>
+                    <div class="form-group">
+                        <label>CVV:</label>
+                        <input type="text" id="newCardCVV" placeholder="123" required>
+                    </div>
                 </div>
                 <div class="order-total">
                     <p>Сумма товаров: <span id="cartTotalAmount">0 BYN</span></p>
                     <p>Доставка: <span id="deliveryFee">0 BYN</span></p>
                     <p><strong>Итого: <span id="finalTotal">0 BYN</span></strong></p>
                 </div>
-                <button type="submit" class="submit-order-btn" id="submitOrderBtn" disabled>Оформить заказ</button>
+                <button type="submit" class="submit-order-btn">Оформить заказ</button>
             </form>
         </div>
     `;
     document.body.appendChild(modal);
     
-    // Динамическое прикрепление событий
-    attachOrderEvents();
-    
-    // Закрытие модалки
-    modal.addEventListener('click', e => { if (e.target === modal) closeOrderModal(); });
+    // Обработчики в JS вместо inline
     const closeBtn = modal.querySelector('.close-modal');
-    if (closeBtn) closeBtn.addEventListener('click', closeOrderModal);
+    closeBtn.addEventListener('click', closeOrderModal);
     
-    // Submit формы
-    const form = modal.querySelector('#orderForm');
-    if (form) form.addEventListener('submit', submitOrder);
+    const form = document.getElementById('orderForm');
+    form.addEventListener('submit', submitOrder);
+    
+    const deliveryRadios = modal.querySelectorAll('input[name="delivery"]');
+    deliveryRadios.forEach(radio => {
+        radio.addEventListener('change', calculateTotal);
+    });
+    
+    const addCardBtn = document.getElementById('addNewCardBtn');
+    addCardBtn.addEventListener('click', addNewCard);
+    
+    modal.addEventListener('click', e => {
+        if (e.target === modal) closeOrderModal();
+    });
 }
 
 function attachOrderEvents() {

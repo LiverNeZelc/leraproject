@@ -20,6 +20,7 @@ app.use(
                     "https://yastatic.net",
                     "https://core-renderer-tiles.maps.yandex.net"
                 ],
+                "script-src-attr": ["'none'"],
                 "style-src": ["'self'", "'unsafe-inline'", "https://cdnjs.cloudflare.com"],
                 "img-src": [
                     "'self'",
@@ -32,7 +33,7 @@ app.use(
                     "'self'",
                     "https://api-maps.yandex.ru",
                     "https://core-renderer-tiles.maps.yandex.net",
-                    "https://*.yandex.ru" // Разрешаем запросы к поддоменам Яндекса
+                    "https://*.yandex.ru"
                 ],
                 "font-src": ["'self'", "https://cdnjs.cloudflare.com"],
             },
@@ -421,7 +422,7 @@ app.get("/api/orders/current", async (req, res) => {
         res.status(200).json(ordersWithItems);
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: "Ошибка загрузки заказов" });
+        res.status(500).json({ error: "Заказы не найдены" });
     }
 });
 
@@ -546,6 +547,224 @@ app.post('/api/admin/orders/:orderId/complete', async (req, res) => {
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Ошибка завершения заказа' });
+    }
+});
+
+// Добавление новой книги (только для администраторов)
+app.post('/api/admin/books/add', async (req, res) => {
+    try {
+        console.log('📥 [DEBUG] Получен запрос на добавление книги');
+        console.log('📥 [DEBUG] userType:', req.session.userType);
+        console.log('📥 [DEBUG] userId:', req.session.userId);
+        
+        if (req.session.userType !== 'employee') {
+            console.log('❌ [DEBUG] Доступ запрещен - пользователь не сотрудник');
+            return res.status(403).json({ error: 'Доступ запрещен - требуется роль сотрудника' });
+        }
+        
+        const { title, author, publisher, genre, year, pages, rating, description, price } = req.body;
+        
+        console.log('📥 [DEBUG] Получены данные книги:', { title, author, publisher, genre, year, pages, rating, description, price });
+        
+        // Валидация
+        if (!title || price === null || price === undefined) {
+            console.log('❌ [DEBUG] Ошибка валидации - отсутствует название или цена');
+            return res.status(400).json({ error: 'Название и цена обязательны' });
+        }
+        
+        // Добавляем автора если его нет
+        let authorId = null;
+        if (author) {
+            const authorRes = await db.pool.query(
+                `SELECT "AuthorID" FROM "Authors" WHERE "FullName" = $1`,
+                [author]
+            );
+            
+            if (authorRes.rows.length === 0) {
+                console.log('➕ [DEBUG] Создаю нового автора:', author);
+                const newAuthor = await db.addAuthor({
+                    FullName: author,
+                    Biography: null,
+                    Country: null,
+                    BirthDate: null
+                });
+                authorId = newAuthor.AuthorID;
+                console.log('✅ [DEBUG] Автор создан с ID:', authorId);
+            } else {
+                authorId = authorRes.rows[0].AuthorID;
+                console.log('✅ [DEBUG] Автор найден с ID:', authorId);
+            }
+        }
+        
+        // Добавляем издательство если его нет
+        let publisherId = null;
+        if (publisher) {
+            const pubRes = await db.pool.query(
+                `SELECT "PublisherID" FROM "Publishers" WHERE "Name" = $1`,
+                [publisher]
+            );
+            
+            if (pubRes.rows.length === 0) {
+                console.log('➕ [DEBUG] Создаю новое издательство:', publisher);
+                const newPub = await db.addPublisher({
+                    Name: publisher,
+                    Country: null,
+                    Website: null,
+                    ContactEmail: null
+                });
+                publisherId = newPub.PublisherID;
+                console.log('✅ [DEBUG] Издательство создано с ID:', publisherId);
+            } else {
+                publisherId = pubRes.rows[0].PublisherID;
+                console.log('✅ [DEBUG] Издательство найдено с ID:', publisherId);
+            }
+        }
+        
+        // Правильно обрабатываем числовые значения
+        const yearValue = year && !isNaN(year) ? parseInt(year) : null;
+        const pagesValue = pages && !isNaN(pages) ? parseInt(pages) : null;
+        const ratingValue = rating && !isNaN(rating) ? parseFloat(rating) : 0;
+        const priceValue = parseFloat(price);
+        
+        // Добавляем книгу
+        console.log('📝 [DEBUG] Добавляю книгу с параметрами:', {
+            title,
+            authorId,
+            publisherId,
+            genre: genre || null,
+            year: yearValue,
+            pages: pagesValue,
+            rating: ratingValue,
+            description: description || null,
+            price: priceValue
+        });
+        
+        const book = await db.addBook({
+            Title: title,
+            AuthorID: authorId || null,
+            PublisherID: publisherId || null,
+            ISBN: null,
+            Genre: genre || null,
+            Price: priceValue,
+            Stock: 0,
+            Description: description || null,
+            CoverURL: null,
+            Year: yearValue,
+            Pages: pagesValue,
+            Rating: ratingValue
+        });
+        
+        console.log('✅ [DEBUG] Книга успешно добавлена:', book);
+        
+        res.status(201).json({ 
+            message: 'Книга успешно добавлена',
+            bookId: book.BookID,
+            book: book
+        });
+    } catch (err) {
+        console.error('❌ [DEBUG] Ошибка добавления книги:', err);
+        res.status(500).json({ error: 'Ошибка добавления книги: ' + err.message });
+    }
+});
+
+// Удаление книги (только для администраторов)
+app.delete('/api/admin/books/delete/:bookId', async (req, res) => {
+    try {
+        console.log('📥 [DEBUG] Получен запрос на удаление книги');
+        console.log('📥 [DEBUG] userType:', req.session.userType);
+        
+        if (req.session.userType !== 'employee') {
+            console.log('❌ [DEBUG] Доступ запрещен - пользователь не сотрудник');
+            return res.status(403).json({ error: 'Доступ запрещен - требуется роль сотрудника' });
+        }
+        
+        const { bookId } = req.params;
+        
+        if (!bookId || isNaN(bookId)) {
+            console.log('❌ [DEBUG] Некорректный ID книги');
+            return res.status(400).json({ error: 'Некорректный ID книги' });
+        }
+        
+        console.log(`📝 [DEBUG] Удаляю книгу с ID: ${bookId}`);
+        
+        // Проверяем, существует ли книга
+        const bookRes = await db.pool.query(
+            `SELECT * FROM "Books" WHERE "BookID" = $1`,
+            [bookId]
+        );
+        
+        if (!bookRes.rows.length) {
+            console.log(`❌ [DEBUG] Книга с ID ${bookId} не найдена`);
+            return res.status(404).json({ error: 'Книга не найдена' });
+        }
+        
+        const book = bookRes.rows[0];
+        console.log(`📚 [DEBUG] Найдена книга для удаления: ${book.Title}`);
+        
+        // Удаляем книгу
+        const deletedBook = await db.deleteBook(bookId);
+        
+        console.log(`✅ [DEBUG] Книга успешно удалена: ${deletedBook.Title}`);
+        
+        res.status(200).json({ 
+            message: `Книга "${deletedBook.Title}" успешно удалена из базы данных`,
+            bookId: deletedBook.BookID,
+            bookTitle: deletedBook.Title
+        });
+    } catch (err) {
+        console.error('❌ [DEBUG] Ошибка удаления книги:', err);
+        res.status(500).json({ error: 'Ошибка удаления книги: ' + err.message });
+    }
+});
+
+// Удаление книги по названию (только для администраторов)
+app.delete('/api/admin/books/delete-by-title', async (req, res) => {
+    try {
+        console.log('📥 [DEBUG] Получен запрос на удаление книги по названию');
+        console.log('📥 [DEBUG] userType:', req.session.userType);
+        
+        if (req.session.userType !== 'employee') {
+            console.log('❌ [DEBUG] Доступ запрещен - пользователь не сотрудник');
+            return res.status(403).json({ error: 'Доступ запрещен - требуется роль сотрудника' });
+        }
+        
+        const { title } = req.body;
+        
+        if (!title || typeof title !== 'string' || title.trim() === '') {
+            console.log('❌ [DEBUG] Некорректное название книги');
+            return res.status(400).json({ error: 'Пожалуйста, введите название книги' });
+        }
+        
+        const trimmedTitle = title.trim();
+        console.log(`📝 [DEBUG] Ищу книгу для удаления: "${trimmedTitle}"`);
+        
+        // Проверяем, существует ли книга с таким названием
+        const bookRes = await db.pool.query(
+            `SELECT * FROM "Books" WHERE "Title" = $1`,
+            [trimmedTitle]
+        );
+        
+        if (!bookRes.rows.length) {
+            console.log(`❌ [DEBUG] Книга с названием "${trimmedTitle}" не найдена`);
+            return res.status(404).json({ error: `Книга с названием "${trimmedTitle}" не найдена в базе данных` });
+        }
+        
+        const book = bookRes.rows[0];
+        console.log(`📚 [DEBUG] Найдена книга для удаления: "${book.Title}" (ID: ${book.BookID})`);
+        
+        // Удаляем книгу
+        const deletedBook = await db.deleteBookByTitle(trimmedTitle);
+        
+        console.log(`✅ [DEBUG] Книга успешно удалена: "${deletedBook.Title}"`);
+        
+        res.status(200).json({ 
+            message: `Книга "${deletedBook.Title}" успешно удалена из базы данных`,
+            bookId: deletedBook.BookID,
+            bookTitle: deletedBook.Title
+        });
+    } catch (err) {
+        console.error('❌ [DEBUG] Ошибка удаления книги:', err);
+        res.status(500).json({ error: 'Ошибка удаления книги: ' + err.message });
     }
 });
 

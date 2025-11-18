@@ -216,11 +216,11 @@ async function getBookById(id) {
 }
 
 async function addBook(book) {
-    const { Title, AuthorID, PublisherID, ISBN, Genre, Price, Stock, Description, CoverURL } = book;
+    const { Title, AuthorID, PublisherID, ISBN, Genre, Price, Stock, Description, CoverURL, Year, Pages, Rating } = book;
     const res = await pool.query(
-        `INSERT INTO "Books" ("Title","AuthorID","PublisherID","ISBN","Genre","Price","Stock","Description","CoverURL")
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-        [Title, AuthorID, PublisherID, ISBN, Genre, Price, Stock, Description, CoverURL]
+        `INSERT INTO "Books" ("Title","AuthorID","PublisherID","ISBN","Genre","Price","Stock","Description","CoverURL","Year","Pages","Rating")
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+        [Title, AuthorID, PublisherID, ISBN, Genre, Price, Stock, Description, CoverURL, Year, Pages, Rating]
     );
     return res.rows[0];
 }
@@ -531,13 +531,32 @@ async function deleteOrder(orderId, clientId) {
     await pool.query(`DELETE FROM "Orders" WHERE "OrderID" = $1 AND "ClientID" = $2`, [orderId, clientId]);
 }
 
+async function deleteBook(bookId) {
+    // Удаляем книгу только из таблицы Books
+    // Связи через foreign keys будут сохранены в других таблицах
+    const res = await pool.query(
+        `DELETE FROM "Books" WHERE "BookID" = $1 RETURNING *`,
+        [bookId]
+    );
+    return res.rows[0];
+}
+
+async function deleteBookByTitle(title) {
+    // Удаляем книгу по названию
+    const res = await pool.query(
+        `DELETE FROM "Books" WHERE "Title" = $1 RETURNING *`,
+        [title]
+    );
+    return res.rows[0];
+}
+
 // --- Экспортируем ---
 module.exports = {
     pool,
     initDB,
     getAllAuthors, getAuthorById, addAuthor,
     getAllPublishers, addPublisher,
-    getAllBooks, getBookById, addBook,
+    getAllBooks, getBookById, addBook, deleteBook, deleteBookByTitle,
     getClientById, addClient,
     getCartByClient, addToCart, removeFromCart, clearCart,
     createOrder, getOrdersByClient,

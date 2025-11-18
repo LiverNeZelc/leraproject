@@ -114,7 +114,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             });
                         });
                     } catch (err) {
-                        ordersContainer.innerHTML = '<p class="muted">Ошибка загрузки заказов</p>';
+                        ordersContainer.innerHTML = '<p class="muted">Заказы не найдены</p>';
                     }
                 });
             }
@@ -146,7 +146,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     .then(orders => {
                         if (!orders || !Array.isArray(orders)) {
                             console.log('⚠️ [DEBUG] Некорректный ответ от сервера');
-                            ordersContainer.innerHTML = '<p class="muted">Ошибка загрузки заказов</p>';
+                            ordersContainer.innerHTML = '<p class="muted">Заказы не найдены</p>';
                             return;
                         }
                         console.log(`✅ [DEBUG] Получено заказов: ${orders.length}`);
@@ -175,14 +175,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     })
                     .catch(err => {
                         console.error('❌ [DEBUG] Ошибка загрузки заказов:', err);
-                        ordersContainer.innerHTML = '<p class="muted">Ошибка загрузки заказов</p>';
+                        ordersContainer.innerHTML = '<p class="muted">Заказы не найдены</p>';
                     });
             }
         });
     }
     if (adminPanelBtn) {
         adminPanelBtn.addEventListener('click', () => {
-            alert('Админ панель (в разработке)');
+            openAdminPanel();
         });
     }
 
@@ -314,4 +314,291 @@ function openMapModal(order) {
     }
 
     mapModal.style.display = 'flex';
+}
+
+function openAdminPanel() {
+    const adminPanelModal = document.getElementById('adminPanelModal');
+    if (!adminPanelModal) {
+        console.error('❌ [DEBUG] adminPanelModal не найден');
+        return;
+    }
+    
+    adminPanelModal.style.display = 'flex';
+    
+    const closeModal = adminPanelModal.querySelector('.close-modal');
+    if (closeModal) {
+        closeModal.addEventListener('click', () => {
+            adminPanelModal.style.display = 'none';
+        });
+    }
+    
+    // Закрытие при клике на фон
+    window.addEventListener('click', (e) => {
+        if (e.target === adminPanelModal) {
+            adminPanelModal.style.display = 'none';
+        }
+    });
+    
+    const addBookForm = document.getElementById('addBookForm');
+    if (addBookForm) {
+        addBookForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const titleVal = document.getElementById('bookTitle').value.trim();
+            const authorVal = document.getElementById('bookAuthor').value.trim();
+            const publisherVal = document.getElementById('bookPublisher').value.trim();
+            const genreVal = document.getElementById('bookGenre').value.trim();
+            const yearVal = document.getElementById('bookYear').value;
+            const pagesVal = document.getElementById('bookPages').value;
+            const ratingVal = document.getElementById('bookRating').value;
+            const descriptionVal = document.getElementById('bookDescription').value.trim();
+            const priceVal = document.getElementById('bookPrice').value;
+            
+            // Валидация
+            if (!titleVal || !priceVal) {
+                showNotification('⚠️ Пожалуйста, заполните название и цену');
+                return;
+            }
+            
+            const formData = {
+                title: titleVal,
+                author: authorVal || null,
+                publisher: publisherVal || null,
+                genre: genreVal || null,
+                year: yearVal ? parseInt(yearVal) : null,
+                pages: pagesVal ? parseInt(pagesVal) : null,
+                rating: ratingVal ? parseFloat(ratingVal) : 0,
+                description: descriptionVal || null,
+                price: parseFloat(priceVal)
+            };
+            
+            console.log('📤 [DEBUG] Отправляю данные:', formData);
+            
+            try {
+                const res = await fetch('/api/admin/books/add', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(formData)
+                });
+                
+                if (!res.ok) {
+                    const error = await res.json();
+                    throw new Error(error.error || 'Ошибка добавления книги');
+                }
+                
+                const result = await res.json();
+                showNotification('✅ Книга успешно добавлена!');
+                console.log('📚 [DEBUG] Добавлена книга с ID:', result.bookId);
+                addBookForm.reset();
+                document.getElementById('bookYear').value = '';
+                document.getElementById('bookPages').value = '';
+                document.getElementById('bookRating').value = '';
+                document.getElementById('bookGenre').value = '';
+            } catch (err) {
+                console.error('❌ Ошибка:', err);
+                showNotification(`❌ ${err.message}`);
+            }
+        });
+        
+        // Обработка загрузки JSON файла
+        const jsonFileInput = document.getElementById('jsonFileInput');
+        if (jsonFileInput) {
+            jsonFileInput.addEventListener('change', async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                
+                try {
+                    // Проверка авторизации перед загрузкой
+                    const meRes = await fetch('/api/me', { credentials: 'include' });
+                    const meData = await meRes.json();
+                    
+                    if (!meRes.ok || meData.userType !== 'employee') {
+                        showNotification('❌ Только сотрудники могут загружать книги');
+                        console.error('❌ Пользователь не является сотрудником:', meData);
+                        return;
+                    }
+                    
+                    console.log('✅ Авторизация успешна, пользователь:', meData.FullName);
+                    
+                    const text = await file.text();
+                    const books = JSON.parse(text);
+                    
+                    // Проверка структуры
+                    if (!Array.isArray(books)) {
+                        showNotification('❌ JSON должен быть массивом книг');
+                        return;
+                    }
+                    
+                    console.log(`📥 Начинаю загрузку ${books.length} книг...`);
+                    
+                    let successCount = 0;
+                    let errorCount = 0;
+                    
+                    // Загружаем каждую книгу
+                    for (let i = 0; i < books.length; i++) {
+                        const book = books[i];
+                        try {
+                            const formData = {
+                                title: book.title || book.Title,
+                                author: book.author || book.Author || null,
+                                publisher: book.publisher || book.Publisher || null,
+                                genre: book.genre || book.Genre || null,
+                                year: book.year || book.Year ? parseInt(book.year || book.Year) : null,
+                                pages: book.pages || book.Pages ? parseInt(book.pages || book.Pages) : null,
+                                rating: book.rating || book.Rating ? parseFloat(book.rating || book.Rating) : 0,
+                                description: book.description || book.Description || null,
+                                price: parseFloat(book.price || book.Price)
+                            };
+                            
+                            if (!formData.title || !formData.price) {
+                                console.warn(`⚠️ Книга ${i + 1} пропущена (нет названия или цены)`);
+                                errorCount++;
+                                continue;
+                            }
+                            
+                            console.log(`📤 Загружаю книгу ${i + 1}/${books.length}: ${formData.title}`);
+                            
+                            const res = await fetch('/api/admin/books/add', {
+                                method: 'POST',
+                                credentials: 'include',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(formData)
+                            });
+                            
+                            if (res.ok) {
+                                const result = await res.json();
+                                console.log(`✅ Книга добавлена с ID: ${result.bookId}`);
+                                successCount++;
+                            } else {
+                                const error = await res.json();
+                                console.error(`❌ Ошибка загрузки книги ${i + 1}:`, error);
+                                errorCount++;
+                            }
+                        } catch (err) {
+                            console.error(`❌ Ошибка обработки книги ${i + 1}:`, err);
+                            errorCount++;
+                        }
+                        
+                        // Небольшая задержка между запросами
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                    }
+                    
+                    showNotification(`✅ Загружено: ${successCount} книг, ошибок: ${errorCount}`);
+                    console.log(`📊 Итоговая статистика: успехов ${successCount}, ошибок ${errorCount}`);
+                    jsonFileInput.value = ''; // Очищаем input
+                } catch (err) {
+                    console.error('❌ Ошибка парсинга JSON:', err);
+                    showNotification('❌ Ошибка парсинга JSON файла: ' + err.message);
+                }
+            });
+        }
+        
+        // Обработка удаления книги
+        const deleteBookBtn = document.getElementById('deleteBookBtn');
+        if (deleteBookBtn) {
+            deleteBookBtn.addEventListener('click', openDeleteBookModal);
+        }
+    }
+}
+
+function openDeleteBookModal() {
+    // Создаём модалку если нет
+    if (!document.getElementById('deleteBookModal')) {
+        createDeleteBookModal();
+    }
+    const modal = document.getElementById('deleteBookModal');
+    modal.style.display = 'flex';
+    // Очищаем поле ввода
+    document.getElementById('deleteBookTitle').value = '';
+    document.getElementById('deleteBookTitle').focus();
+}
+
+function createDeleteBookModal() {
+    const modal = document.createElement('div');
+    modal.id = 'deleteBookModal';
+    modal.className = 'modal';
+    modal.innerHTML = `
+        <div class="modal-content delete-modal">
+            <span class="close-modal">&times;</span>
+            <h2>🗑️ Удалить книгу</h2>
+            
+            <div class="warning">
+                ⚠️ <strong>Внимание!</strong> Эта операция удалит книгу из базы данных. Все связанные данные (заказы, корзина) будут сохранены.
+            </div>
+            
+            <div class="form-group">
+                <label for="deleteBookTitle">Введите название книги для удаления:</label>
+                <input 
+                    type="text" 
+                    id="deleteBookTitle" 
+                    placeholder="Например: Война и мир"
+                >
+            </div>
+            
+            <div class="form-actions">
+                <button type="button" class="btn-confirm" id="confirmDeleteBtn">
+                    ✓ Удалить
+                </button>
+                <button type="button" class="btn-cancel" id="cancelDeleteBtn">
+                    ✕ Отмена
+                </button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    
+    // Обработчики в JS вместо inline
+    modal.querySelector('.close-modal').addEventListener('click', closeDeleteBookModal);
+    document.getElementById('confirmDeleteBtn').addEventListener('click', confirmDeleteBook);
+    document.getElementById('cancelDeleteBtn').addEventListener('click', closeDeleteBookModal);
+    document.getElementById('deleteBookTitle').addEventListener('keypress', e => {
+        if (e.key === 'Enter') confirmDeleteBook();
+    });
+    
+    modal.addEventListener('click', e => {
+        if (e.target === modal) closeDeleteBookModal();
+    });
+}
+
+async function confirmDeleteBook() {
+    const bookTitle = document.getElementById('deleteBookTitle').value.trim();
+    
+    if (!bookTitle) {
+        showNotification('⚠️ Пожалуйста, введите название книги');
+        return;
+    }
+    
+    if (!confirm(`Вы уверены? Это удалит книгу "${bookTitle}" из базы данных.`)) {
+        return;
+    }
+    
+    try {
+        console.log(`📤 Отправляю запрос на удаление книги: ${bookTitle}`);
+        
+        const res = await fetch(`/api/admin/books/delete-by-title`, {
+            method: 'DELETE',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title: bookTitle })
+        });
+        
+        const result = await res.json();
+        
+        if (!res.ok) {
+            throw new Error(result.error || 'Ошибка удаления книги');
+        }
+        
+        showNotification(`✅ ${result.message}`);
+        console.log('📚 [DEBUG] Книга удалена:', result.bookTitle);
+        closeDeleteBookModal();
+    } catch (err) {
+        console.error('❌ Ошибка:', err);
+        showNotification(`❌ ${err.message}`);
+    }
+}
+
+function closeDeleteBookModal() {
+    const modal = document.getElementById('deleteBookModal');
+    if (modal) modal.style.display = 'none';
 }
