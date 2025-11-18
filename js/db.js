@@ -471,6 +471,55 @@ async function getOrdersByEmployee(employeeId, statusLike) {
     return res.rows;
 }
 
+async function getOrdersByStatus(status) {
+    console.log(`Вызов getOrdersByStatus с параметром: "${status}"`);
+
+    const query = `
+        SELECT o."OrderID", c."FullName" AS "ClientName", d."Phone", d."DeliveryAddress", d."DeliveryMethod", o."Status", o."OrderDate",
+               (SELECT json_agg(json_build_object('Title', b."Title", 'Quantity', oi."Quantity"))
+                FROM "OrderItems" oi
+                JOIN "Books" b ON oi."BookID" = b."BookID"
+                WHERE oi."OrderID" = o."OrderID") AS "Items"
+        FROM "Orders" o
+        JOIN "Deliveries" d ON o."OrderID" = d."OrderID"
+        JOIN "Clients" c ON o."ClientID" = c."ClientID"
+        WHERE o."Status" = $1 AND d."DeliveryMethod" != 'Самовывоз'
+        ORDER BY o."OrderDate" DESC
+    `;
+
+    try {
+        const res = await pool.query(query, [status]);
+        console.log(`Найдено заказов: ${res.rows.length}`);
+        return res.rows;
+    } catch (err) {
+        console.error(`Ошибка выполнения getOrdersByStatus с параметром "${status}":`, err);
+        throw err;
+    }
+}
+
+async function getDeliveryOrders() {
+
+    const query = `
+        SELECT o."OrderID", c."FullName" AS "ClientName", d."Phone", d."DeliveryAddress", d."DeliveryMethod", o."Status", o."OrderDate",
+               (SELECT json_agg(json_build_object('Title', b."Title", 'Quantity', oi."Quantity"))
+                FROM "OrderItems" oi
+                JOIN "Books" b ON oi."BookID" = b."BookID"
+                WHERE oi."OrderID" = o."OrderID") AS "Items"
+        FROM "Orders" o
+        JOIN "Deliveries" d ON o."OrderID" = d."OrderID"
+        JOIN "Clients" c ON o."ClientID" = c."ClientID"
+        WHERE d."DeliveryMethod" != 'Самовывоз'
+        ORDER BY o."OrderDate" DESC
+    `;
+
+    try {
+        const res = await pool.query(query);
+        return res.rows;
+    } catch (err) {
+        throw err;
+    }
+}
+
 // --- Экспортируем ---
 module.exports = {
     pool,
@@ -494,4 +543,6 @@ module.exports = {
     getOrdersByPhone,
     getOrdersByPhonePartial,
     getOrdersByEmployee,
+    getOrdersByStatus,
+    getDeliveryOrders,
 };

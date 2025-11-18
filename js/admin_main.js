@@ -122,7 +122,62 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (deliveryModeBtn) {
         deliveryModeBtn.addEventListener('click', () => {
-            alert('Режим доставки (в разработке)');
+            console.log('🔍 [DEBUG] Нажата кнопка "Режим доставки"');
+            const deliveryModal = document.getElementById('deliveryModeModal');
+            if (deliveryModal) deliveryModal.style.display = 'flex';
+
+            const closeModal = deliveryModal.querySelector('.close-modal');
+            if (closeModal) {
+                closeModal.addEventListener('click', () => {
+                    console.log('🔍 [DEBUG] Закрытие модального окна "Режим доставки" сработало');
+                    deliveryModal.style.display = 'none';
+                });
+            }
+
+            const ordersContainer = document.getElementById('deliveryOrdersContainer');
+            if (ordersContainer) {
+                ordersContainer.innerHTML = '<p class="muted">Загрузка...</p>';
+                console.log('📥 [DEBUG] Отправка запроса на сервер для получения заказов');
+                fetch('/api/admin/orders?status=Оплачен, ожидается доставка', { credentials: 'include' })
+                    .then(res => {
+                        console.log(`📤 [DEBUG] Ответ сервера: статус ${res.status}`);
+                        return res.json();
+                    })
+                    .then(orders => {
+                        if (!orders || !Array.isArray(orders)) {
+                            console.log('⚠️ [DEBUG] Некорректный ответ от сервера');
+                            ordersContainer.innerHTML = '<p class="muted">Ошибка загрузки заказов</p>';
+                            return;
+                        }
+                        console.log(`✅ [DEBUG] Получено заказов: ${orders.length}`);
+                        if (orders.length === 0) {
+                            ordersContainer.innerHTML = '<p class="muted">Заказы не найдены</p>';
+                            return;
+                        }
+                        ordersContainer.innerHTML = '';
+                        orders.forEach(order => {
+                            const div = document.createElement('div');
+                            div.className = 'order-card';
+                            const itemsHtml = order.Items.map(item => `<li>${item.Title} x${item.Quantity}</li>`).join('');
+                            const orderDate = order.OrderDate.split('T')[0]; // Убираем время из даты
+                            div.innerHTML = `
+                                <h4>Заказ #${order.OrderID}</h4>
+                                <p><strong>Телефон:</strong> ${order.Phone}</p>
+                                <p><strong>Дата заказа:</strong> ${orderDate}</p>
+                                <p><strong>Адрес:</strong> ${order.DeliveryAddress}</p>
+                                <p><strong>Метод доставки:</strong> ${order.DeliveryMethod}</p>
+                                <p><strong>Книги:</strong></p>
+                                <ul>${itemsHtml}</ul>
+                            `;
+                            div.addEventListener('click', () => openMapModal(order));
+                            ordersContainer.appendChild(div);
+                        });
+                    })
+                    .catch(err => {
+                        console.error('❌ [DEBUG] Ошибка загрузки заказов:', err);
+                        ordersContainer.innerHTML = '<p class="muted">Ошибка загрузки заказов</p>';
+                    });
+            }
         });
     }
     if (adminPanelBtn) {
@@ -172,4 +227,91 @@ function showNotification(message) {
         style.setAttribute('data-notification', 'true');
         document.head.appendChild(style);
     }
+}
+
+function openMapModal(order) {
+    if (typeof ymaps === 'undefined') {
+        console.error('❌ [DEBUG] Yandex.Maps не подключен');
+        showNotification('Ошибка: Карта недоступна. Проверьте настройки API-ключа.');
+        return;
+    }
+
+    const mapModal = document.getElementById('mapModal');
+    if (!mapModal) return;
+
+    const closeModal = mapModal.querySelector('.close-modal');
+    if (closeModal) {
+        closeModal.addEventListener('click', () => mapModal.style.display = 'none');
+    }
+
+    const mapContainer = document.getElementById('mapContainer');
+    const completeBtn = document.getElementById('completeDeliveryBtn');
+
+    if (mapContainer) {
+        mapContainer.innerHTML = `<p class="muted">Загрузка карты...</p>`;
+        ymaps.ready(() => {
+            try {
+                const map = new ymaps.Map(mapContainer, {
+                    center: [55.751574, 37.573856], // Москва, центр
+                    zoom: 10,
+                });
+
+                // Выполняем поиск адреса через геокодер
+                if (order.DeliveryAddress) {
+                    console.log('🔍 [DEBUG] Геокодирование адреса:', order.DeliveryAddress);
+                    ymaps.geocode(order.DeliveryAddress).then(
+                        (res) => {
+                            const firstGeoObject = res.geoObjects.get(0);
+                            if (firstGeoObject) {
+                                const coords = firstGeoObject.geometry.getCoordinates();
+                                console.log('✅ [DEBUG] Координаты адреса:', coords);
+                                map.setCenter(coords, 15); // Центрируем карту на найденный адрес
+                                map.geoObjects.add(firstGeoObject); // Добавляем метку на карту
+                            } else {
+                                console.warn('⚠️ [DEBUG] Адрес не найден');
+                                showNotification('Адрес не найден. Проверьте корректность данных.');
+                            }
+                        },
+                        (err) => {
+                            console.error('❌ [DEBUG] Ошибка геокодирования:', err);
+                            showNotification('Ошибка поиска адреса. Проверьте корректность данных.');
+                        }
+                    );
+                } else {
+                    console.warn('⚠️ [DEBUG] Адрес доставки отсутствует');
+                    showNotification('Адрес доставки отсутствует.');
+                }
+            } catch (err) {
+                console.error('❌ [DEBUG] Ошибка инициализации карты:', err);
+                showNotification('Ошибка инициализации карты.');
+            }
+        });
+    }
+
+    if (completeBtn) {
+        completeBtn.onclick = async () => {
+            try {
+                const res = await fetch(`/api/admin/orders/${order.OrderID}/complete`, {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                });
+                if (!res.ok) throw new Error('Ошибка завершения доставки');
+                showNotification('Заказ доставлен');
+                mapModal.style.display = 'none';
+
+                const orderCard = document.querySelector(`.order-card[data-order-id="${order.OrderID}"]`);
+                if (orderCard) {
+                    orderCard.remove();
+                } else {
+                    console.warn(`⚠️ [DEBUG] Элемент .order-card[data-order-id="${order.OrderID}"] не найден`);
+                }
+            } catch (err) {
+                console.error(err);
+                showNotification('Ошибка завершения доставки');
+            }
+        };
+    }
+
+    mapModal.style.display = 'flex';
 }

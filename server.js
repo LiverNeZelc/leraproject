@@ -9,7 +9,36 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // --- Middleware ---
-app.use(helmet());
+app.use(
+    helmet({
+        contentSecurityPolicy: {
+            directives: {
+                "default-src": ["'self'"],
+                "script-src": [
+                    "'self'",
+                    "https://api-maps.yandex.ru",
+                    "https://yastatic.net",
+                    "https://core-renderer-tiles.maps.yandex.net"
+                ],
+                "style-src": ["'self'", "'unsafe-inline'", "https://cdnjs.cloudflare.com"],
+                "img-src": [
+                    "'self'",
+                    "data:",
+                    "https://yastatic.net",
+                    "https://core-renderer-tiles.maps.yandex.net",
+                    "https://yandex.ru"
+                ],
+                "connect-src": [
+                    "'self'",
+                    "https://api-maps.yandex.ru",
+                    "https://core-renderer-tiles.maps.yandex.net",
+                    "https://*.yandex.ru" // Разрешаем запросы к поддоменам Яндекса
+                ],
+                "font-src": ["'self'", "https://cdnjs.cloudflare.com"],
+            },
+        },
+    })
+);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cors({ origin: true, credentials: true }));
@@ -433,24 +462,35 @@ app.get('/api/admin/orders', async (req, res) => {
             return res.status(403).json({ error: 'Доступ запрещен' });
         }
 
-        const { phone } = req.query;
-        if (!phone) {
-            return res.status(400).json({ error: 'Номер телефона обязателен' });
+        const { phone, status } = req.query;
+
+        if (phone) {
+            console.log(`🔍 [DEBUG] Поиск заказов по номеру телефона: ${phone}`);
+            const orders = await db.getOrdersByPhonePartial(phone, 'Оплачен, ожидает получения');
+            if (!orders || orders.length === 0) {
+                console.log(`⚠️ [DEBUG] Заказы не найдены для номера: ${phone}`);
+                return res.status(404).json({ error: 'Заказы не найдены' });
+            }
+            console.log(`✅ [DEBUG] Найдено заказов: ${orders.length}`);
+            return res.json(orders);
         }
 
-        console.log(`Поиск заказов по номеру телефона: ${phone}`); // Логируем номер телефона для отладки
-
-        // Используем функцию getOrdersByPhone из db.js
-        const orders = await db.getOrdersByPhonePartial(phone, 'Оплачен, ожидает получения');
-        if (!orders || orders.length === 0) {
-            console.log(`Заказы не найдены для номера: ${phone}`); // Логируем отсутствие заказов
-            return res.status(404).json({ error: 'Заказы не найдены' });
+        if (status) {
+            console.log(`🔍 [DEBUG] Поиск заказов по статусу: ${status}`);
+            const decodedStatus = decodeURIComponent(status);
+            const orders = await db.getOrdersByStatus(decodedStatus);
+            if (!orders || orders.length === 0) {
+                console.log(`⚠️ [DEBUG] Заказы не найдены для статуса: ${decodedStatus}`);
+                return res.status(404).json({ error: 'Заказы не найдены' });
+            }
+            console.log(`✅ [DEBUG] Найдено заказов: ${orders.length}`);
+            return res.json(orders);
         }
 
-        console.log(`Найдено заказов: ${orders.length}`); // Логируем количество найденных заказов
-        res.json(orders);
+        console.log('⚠️ [DEBUG] Некорректный запрос: отсутствуют параметры phone или status');
+        return res.status(400).json({ error: 'Необходимо указать параметр phone или status' });
     } catch (err) {
-        console.error('Ошибка получения заказов:', err);
+        console.error('❌ [DEBUG] Ошибка получения заказов:', err);
         res.status(500).json({ error: 'Ошибка получения заказов' });
     }
 });
@@ -467,6 +507,67 @@ app.post('/api/admin/orders/:orderId/complete', async (req, res) => {
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Ошибка завершения заказа' });
+    }
+});
+
+// Поиск заказов по статусу
+app.get('/api/admin/orders', async (req, res) => {
+    try {
+        if (req.session.userType !== 'employee') {
+            console.log('Доступ запрещен: пользователь не является сотрудником');
+            return res.status(403).json({ error: 'Доступ запрещен' });
+        }
+
+        const { status } = req.query;
+        if (!status) {
+            console.log('Ошибка: параметр "status" отсутствует');
+            return res.status(400).json({ error: 'Параметр "status" обязателен' });
+        }
+
+        console.log(`Получен запрос на поиск заказов с параметром status: "${status}"`);
+
+        // Декодируем параметр status (на случай, если он URL-encoded)
+        const decodedStatus = decodeURIComponent(status);
+        console.log(`Декодированный статус: "${decodedStatus}"`);
+
+        // Получаем заказы по статусу
+        const orders = await db.getOrdersByStatus(decodedStatus);
+        if (!orders || orders.length === 0) {
+            console.log(`Заказы не найдены для статуса: "${decodedStatus}"`);
+            return res.status(404).json({ error: 'Заказы не найдены' });
+        }
+
+        console.log(`Найдено заказов: ${orders.length}`);
+        res.json(orders);
+    } catch (err) {
+        console.error('Ошибка получения заказов:', err);
+        res.status(500).json({ error: 'Ошибка получения заказов' });
+    }
+});
+
+// Поиск заказов по доставке
+app.get('/api/admin/orders', async (req, res) => {
+    try {
+        console.log('🔍 [DEBUG] Получен запрос на поиск заказов с доставкой');
+        if (req.session.userType !== 'employee') {
+            console.log('⛔ [DEBUG] Доступ запрещен: пользователь не является сотрудником');
+            return res.status(403).json({ error: 'Доступ запрещен' });
+        }
+
+        console.log('📥 [DEBUG] Вызов функции getDeliveryOrders');
+        const orders = await db.getDeliveryOrders();
+        console.log(`✅ [DEBUG] Найдено заказов с доставкой: ${orders.length}`);
+
+        if (!orders || orders.length === 0) {
+            console.log('⚠️ [DEBUG] Заказы с доставкой не найдены');
+            return res.status(404).json({ error: 'Заказы с доставкой не найдены' });
+        }
+
+        console.log('📤 [DEBUG] Отправка заказов клиенту');
+        res.json(orders);
+    } catch (err) {
+        console.error('❌ [DEBUG] Ошибка получения заказов с доставкой:', err);
+        res.status(500).json({ error: 'Ошибка получения заказов с доставкой' });
     }
 });
 
