@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const issueModeBtn = document.getElementById('issueModeBtn');
     const deliveryModeBtn = document.getElementById('deliveryModeBtn');
     const adminPanelBtn = document.getElementById('adminPanelBtn');
+    const analyticsBtn = document.getElementById('analyticsBtn');
 
     // --- Открытие модалки админа ---
     window.openAdminModal = async function() {
@@ -38,6 +39,11 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('click', (e) => {
         if (e.target === adminModal) adminModal.style.display = 'none';
     });
+
+    // --- Кнопка аналитики (в админ-модалке) ---
+    if (analyticsBtn) {
+        analyticsBtn.addEventListener('click', openAnalyticsModal);
+    }
 
     // --- Кнопки (пока заглушки, кроме выхода) ---
     if (issueModeBtn) {
@@ -345,273 +351,207 @@ function openAdminPanel() {
         });
     }
     
-    // Закрытие при клике на фон
-    window.addEventListener('click', (e) => {
-        if (e.target === adminPanelModal) {
-            adminPanelModal.style.display = 'none';
-        }
-    });
+    // Обработка кнопки аналитики
+    const analyticsBtn = document.getElementById('analyticsBtn');
+    if (analyticsBtn) {
+        analyticsBtn.addEventListener('click', openAnalyticsModal);
+    }
+}
+
+async function openAnalyticsModal() {
+    console.log('📊 [DEBUG] Открываю модалку аналитики...');
     
-    const addBookForm = document.getElementById('addBookForm');
-    if (addBookForm) {
-        addBookForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            
-            const titleVal = document.getElementById('bookTitle').value.trim();
-            const authorVal = document.getElementById('bookAuthor').value.trim();
-            const publisherVal = document.getElementById('bookPublisher').value.trim();
-            const genreVal = document.getElementById('bookGenre').value.trim();
-            const yearVal = document.getElementById('bookYear').value;
-            const pagesVal = document.getElementById('bookPages').value;
-            const ratingVal = document.getElementById('bookRating').value;
-            const descriptionVal = document.getElementById('bookDescription').value.trim();
-            const priceVal = document.getElementById('bookPrice').value;
-            
-            // Валидация
-            if (!titleVal || !priceVal) {
-                showNotification('⚠️ Пожалуйста, заполните название и цену');
-                return;
-            }
-            
-            const formData = {
-                title: titleVal,
-                author: authorVal || null,
-                publisher: publisherVal || null,
-                genre: genreVal || null,
-                year: yearVal ? parseInt(yearVal) : null,
-                pages: pagesVal ? parseInt(pagesVal) : null,
-                rating: ratingVal ? parseFloat(ratingVal) : 0,
-                description: descriptionVal || null,
-                price: parseFloat(priceVal)
-            };
-            
-            console.log('📤 [DEBUG] Отправляю данные:', formData);
-            
-            try {
-                const res = await fetch('/api/admin/books/add', {
-                    method: 'POST',
-                    credentials: 'include',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(formData)
-                });
-                
-                if (!res.ok) {
-                    const error = await res.json();
-                    throw new Error(error.error || 'Ошибка добавления книги');
-                }
-                
-                const result = await res.json();
-                showNotification('✅ Книга успешно добавлена!');
-                console.log('📚 [DEBUG] Добавлена книга с ID:', result.bookId);
-                addBookForm.reset();
-                document.getElementById('bookYear').value = '';
-                document.getElementById('bookPages').value = '';
-                document.getElementById('bookRating').value = '';
-                document.getElementById('bookGenre').value = '';
-            } catch (err) {
-                console.error('❌ Ошибка:', err);
-                showNotification(`❌ ${err.message}`);
-            }
-        });
-        
-        // Обработка загрузки JSON файла
-        const jsonFileInput = document.getElementById('jsonFileInput');
-        if (jsonFileInput) {
-            jsonFileInput.addEventListener('change', async (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-                
-                try {
-                    // Проверка авторизации перед загрузкой
-                    const meRes = await fetch('/api/me', { credentials: 'include' });
-                    const meData = await meRes.json();
-                    
-                    if (!meRes.ok || meData.userType !== 'employee') {
-                        showNotification('❌ Только сотрудники могут загружать книги');
-                        console.error('❌ Пользователь не является сотрудником:', meData);
-                        return;
-                    }
-                    
-                    console.log('✅ Авторизация успешна, пользователь:', meData.FullName);
-                    
-                    const text = await file.text();
-                    const books = JSON.parse(text);
-                    
-                    // Проверка структуры
-                    if (!Array.isArray(books)) {
-                        showNotification('❌ JSON должен быть массивом книг');
-                        return;
-                    }
-                    
-                    console.log(`📥 Начинаю загрузку ${books.length} книг...`);
-                    
-                    let successCount = 0;
-                    let errorCount = 0;
-                    
-                    // Загружаем каждую книгу
-                    for (let i = 0; i < books.length; i++) {
-                        const book = books[i];
-                        try {
-                            const formData = {
-                                title: book.title || book.Title,
-                                author: book.author || book.Author || null,
-                                publisher: book.publisher || book.Publisher || null,
-                                genre: book.genre || book.Genre || null,
-                                year: book.year || book.Year ? parseInt(book.year || book.Year) : null,
-                                pages: book.pages || book.Pages ? parseInt(book.pages || book.Pages) : null,
-                                rating: book.rating || book.Rating ? parseFloat(book.rating || book.Rating) : 0,
-                                description: book.description || book.Description || null,
-                                price: parseFloat(book.price || book.Price)
-                            };
-                            
-                            if (!formData.title || !formData.price) {
-                                console.warn(`⚠️ Книга ${i + 1} пропущена (нет названия или цены)`);
-                                errorCount++;
-                                continue;
-                            }
-                            
-                            console.log(`📤 Загружаю книгу ${i + 1}/${books.length}: ${formData.title}`);
-                            
-                            const res = await fetch('/api/admin/books/add', {
-                                method: 'POST',
-                                credentials: 'include',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify(formData)
-                            });
-                            
-                            if (res.ok) {
-                                const result = await res.json();
-                                console.log(`✅ Книга добавлена с ID: ${result.bookId}`);
-                                successCount++;
-                            } else {
-                                const error = await res.json();
-                                console.error(`❌ Ошибка загрузки книги ${i + 1}:`, error);
-                                errorCount++;
-                            }
-                        } catch (err) {
-                            console.error(`❌ Ошибка обработки книги ${i + 1}:`, err);
-                            errorCount++;
-                        }
-                        
-                        // Небольшая задержка между запросами
-                        await new Promise(resolve => setTimeout(resolve, 100));
-                    }
-                    
-                    showNotification(`✅ Загружено: ${successCount} книг, ошибок: ${errorCount}`);
-                    console.log(`📊 Итоговая статистика: успехов ${successCount}, ошибок ${errorCount}`);
-                    jsonFileInput.value = ''; // Очищаем input
-                } catch (err) {
-                    console.error('❌ Ошибка парсинга JSON:', err);
-                    showNotification('❌ Ошибка парсинга JSON файла: ' + err.message);
-                }
-            });
-        }
-        
-        // Обработка удаления книги
-        const deleteBookBtn = document.getElementById('deleteBookBtn');
-        if (deleteBookBtn) {
-            deleteBookBtn.addEventListener('click', openDeleteBookModal);
-        }
-    }
-}
-
-function openDeleteBookModal() {
     // Создаём модалку если нет
-    if (!document.getElementById('deleteBookModal')) {
-        createDeleteBookModal();
+    if (!document.getElementById('analyticsModal')) {
+        createAnalyticsModal();
     }
-    const modal = document.getElementById('deleteBookModal');
+    
+    const modal = document.getElementById('analyticsModal');
     modal.style.display = 'flex';
-    // Очищаем поле ввода
-    document.getElementById('deleteBookTitle').value = '';
-    document.getElementById('deleteBookTitle').focus();
+    
+    // Загружаем аналитику
+    await loadAnalytics();
 }
 
-function createDeleteBookModal() {
+function createAnalyticsModal() {
     const modal = document.createElement('div');
-    modal.id = 'deleteBookModal';
+    modal.id = 'analyticsModal';
     modal.className = 'modal';
     modal.innerHTML = `
-        <div class="modal-content delete-modal">
+        <div class="modal-content analytics-modal glass">
             <span class="close-modal">&times;</span>
-            <h2>🗑️ Удалить книгу</h2>
+            <h2>📊 Аналитика</h2>
             
-            <div class="warning">
-                ⚠️ <strong>Внимание!</strong> Эта операция удалит книгу из базы данных. Все связанные данные (заказы, корзина) будут сохранены.
+            <div class="analytics-period-tabs">
+                <button class="period-tab-btn active" data-period="day">📅 День</button>
+                <button class="period-tab-btn" data-period="week">📆 Неделя</button>
+                <button class="period-tab-btn" data-period="month">📈 Месяц</button>
+                <button class="period-tab-btn" data-period="year">📊 Год</button>
             </div>
             
-            <div class="form-group">
-                <label for="deleteBookTitle">Введите название книги для удаления:</label>
-                <input 
-                    type="text" 
-                    id="deleteBookTitle" 
-                    placeholder="Например: Война и мир"
-                >
+            <div class="analytics-content">
+                <div class="analytics-grid">
+                    <div class="analytics-card">
+                        <div class="analytics-card-icon">📚</div>
+                        <div class="analytics-card-info">
+                            <p class="analytics-label">Продано книг</p>
+                            <p class="analytics-value" id="analytics-books">0</p>
+                        </div>
+                    </div>
+                    
+                    <div class="analytics-card">
+                        <div class="analytics-card-icon">👥</div>
+                        <div class="analytics-card-info">
+                            <p class="analytics-label">Новых клиентов</p>
+                            <p class="analytics-value" id="analytics-clients">0</p>
+                        </div>
+                    </div>
+                    
+                    <div class="analytics-card">
+                        <div class="analytics-card-icon">💰</div>
+                        <div class="analytics-card-info">
+                            <p class="analytics-label">Прибыль</p>
+                            <p class="analytics-value" id="analytics-revenue">0 BYN</p>
+                        </div>
+                    </div>
+                    
+                    <div class="analytics-card">
+                        <div class="analytics-card-icon">📦</div>
+                        <div class="analytics-card-info">
+                            <p class="analytics-label">Завершённо заказов</p>
+                            <p class="analytics-value" id="analytics-orders">0</p>
+                        </div>
+                    </div>
+                    
+                    <div class="analytics-card">
+                        <div class="analytics-card-icon">⭐</div>
+                        <div class="analytics-card-info">
+                            <p class="analytics-label">Популярная книга</p>
+                            <p class="analytics-value-text" id="analytics-popular">-</p>
+                        </div>
+                    </div>
+                    
+                    <div class="analytics-card">
+                        <div class="analytics-card-icon">🎯</div>
+                        <div class="analytics-card-info">
+                            <p class="analytics-label">Средний чек</p>
+                            <p class="analytics-value" id="analytics-avg-check">0 BYN</p>
+                        </div>
+                    </div>
+                </div>
             </div>
             
-            <div class="form-actions">
-                <button type="button" class="btn-confirm" id="confirmDeleteBtn">
-                    ✓ Удалить
-                </button>
-                <button type="button" class="btn-cancel" id="cancelDeleteBtn">
-                    ✕ Отмена
+            <div class="analytics-actions">
+                <button id="downloadAnalyticsBtn" class="btn-download-analytics">
+                    📥 Скачать отчёт (DOCX)
                 </button>
             </div>
         </div>
     `;
     document.body.appendChild(modal);
     
-    // Обработчики в JS вместо inline
-    modal.querySelector('.close-modal').addEventListener('click', closeDeleteBookModal);
-    document.getElementById('confirmDeleteBtn').addEventListener('click', confirmDeleteBook);
-    document.getElementById('cancelDeleteBtn').addEventListener('click', closeDeleteBookModal);
-    document.getElementById('deleteBookTitle').addEventListener('keypress', e => {
-        if (e.key === 'Enter') confirmDeleteBook();
+    // Обработчики
+    const closeBtn = modal.querySelector('.close-modal');
+    if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+            modal.style.display = 'none';
+        });
+    }
+    
+    // Переключение периодов
+    const periodBtns = modal.querySelectorAll('.period-tab-btn');
+    periodBtns.forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            periodBtns.forEach(b => b.classList.remove('active'));
+            e.target.classList.add('active');
+            await loadAnalytics();
+        });
     });
     
-    modal.addEventListener('click', e => {
-        if (e.target === modal) closeDeleteBookModal();
+    // Скачивание отчёта
+    const downloadBtn = document.getElementById('downloadAnalyticsBtn');
+    if (downloadBtn) {
+        downloadBtn.addEventListener('click', downloadAnalyticsReport);
+    }
+    
+    // Закрытие кликом на фон
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.style.display = 'none';
+        }
     });
 }
 
-async function confirmDeleteBook() {
-    const bookTitle = document.getElementById('deleteBookTitle').value.trim();
+async function loadAnalytics() {
+    const activePeriod = document.querySelector('.period-tab-btn.active')?.dataset.period || 'day';
+    console.log(`� [DEBUG] Загружаю аналитику за ${activePeriod}...`);
     
-    if (!bookTitle) {
-        showNotification('⚠️ Пожалуйста, введите название книги');
-        return;
+    try {
+        const res = await fetch(`/api/admin/analytics?period=${activePeriod}`, {
+            credentials: 'include'
+        });
+        
+        if (!res.ok) {
+            throw new Error('Ошибка загрузки аналитики');
+        }
+        
+        const data = await res.json();
+        console.log('📊 [DEBUG] Аналитика:', data);
+        
+        // Обновляем данные в модалке
+        document.getElementById('analytics-books').textContent = data.booksSold || '0';
+        document.getElementById('analytics-clients').textContent = data.newClients || '0';
+        document.getElementById('analytics-revenue').textContent = `${data.revenue || 0} BYN`;
+        document.getElementById('analytics-orders').textContent = data.completedOrders || '0';
+        document.getElementById('analytics-popular').textContent = data.popularBook || '-';
+        document.getElementById('analytics-avg-check').textContent = `${data.avgCheck || 0} BYN`;
+        
+        // Сохраняем данные для скачивания
+        window.currentAnalytics = data;
+        window.currentPeriod = activePeriod;
+        
+    } catch (err) {
+        console.error('❌ [DEBUG] Ошибка загрузки аналитики:', err);
+        showNotification('Ошибка загрузки аналитики');
     }
-    
-    if (!confirm(`Вы уверены? Это удалит книгу "${bookTitle}" из базы данных.`)) {
+}
+
+async function downloadAnalyticsReport() {
+    if (!window.currentAnalytics) {
+        showNotification('Данные аналитики не загружены');
         return;
     }
     
     try {
-        console.log(`📤 Отправляю запрос на удаление книги: ${bookTitle}`);
-        
-        const res = await fetch(`/api/admin/books/delete-by-title`, {
-            method: 'DELETE',
+        const res = await fetch('/api/admin/analytics/download', {
+            method: 'POST',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title: bookTitle })
+            body: JSON.stringify({
+                period: window.currentPeriod,
+                data: window.currentAnalytics
+            })
         });
         
-        const result = await res.json();
-        
         if (!res.ok) {
-            throw new Error(result.error || 'Ошибка удаления книги');
+            throw new Error('Ошибка скачивания отчёта');
         }
         
-        showNotification(`✅ ${result.message}`);
-        console.log('📚 [DEBUG] Книга удалена:', result.bookTitle);
-        closeDeleteBookModal();
+        // Скачиваем файл
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `analytics_${window.currentPeriod}_${new Date().toISOString().split('T')[0]}.docx`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        
+        showNotification('✅ Отчёт скачан успешно!');
+        
     } catch (err) {
-        console.error('❌ Ошибка:', err);
-        showNotification(`❌ ${err.message}`);
+        console.error('❌ Ошибка скачивания:', err);
+        showNotification('Ошибка скачивания отчёта');
     }
-}
-
-function closeDeleteBookModal() {
-    const modal = document.getElementById('deleteBookModal');
-    if (modal) modal.style.display = 'none';
 }

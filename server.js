@@ -610,7 +610,14 @@ app.post('/api/admin/orders/:orderId/complete', async (req, res) => {
             return res.status(403).json({ error: 'Доступ запрещен' });
         }
         const { orderId } = req.params;
+        
+        // Обновляем статус
         await db.updateOrderStatus(orderId, 'Завершён');
+        
+        // Логируем в аналитику
+        await db.logOrderToAnalytics(orderId);
+        
+        console.log(`✅ [DEBUG] Заказ #${orderId} завершён`);
         res.json({ message: 'Заказ завершён' });
     } catch (err) {
         console.error(err);
@@ -836,12 +843,189 @@ app.delete('/api/admin/books/delete-by-title', async (req, res) => {
     }
 });
 
+// API для аналитики (работает с таблицей Analytics)
+app.get('/api/admin/analytics', async (req, res) => {
+    try {
+        if (req.session.userType !== 'employee') {
+            return res.status(403).json({ error: 'Доступ запрещен' });
+        }
+
+        const period = req.query.period || 'day';
+        let dateFrom, dateTo = new Date();
+
+        // Определяем период
+        switch (period) {
+            case 'day':
+                dateFrom = new Date(dateTo);
+                dateFrom.setDate(dateFrom.getDate() - 1);
+                break;
+            case 'week':
+                dateFrom = new Date(dateTo);
+                dateFrom.setDate(dateFrom.getDate() - 7);
+                break;
+            case 'month':
+                dateFrom = new Date(dateTo);
+                dateFrom.setMonth(dateFrom.getMonth() - 1);
+                break;
+            case 'year':
+                dateFrom = new Date(dateTo);
+                dateFrom.setFullYear(dateFrom.getFullYear() - 1);
+                break;
+            default:
+                dateFrom = new Date(dateTo);
+                dateFrom.setDate(dateFrom.getDate() - 1);
+        }
+
+        console.log(`📊 [DEBUG] Аналитика за ${period}. Период: ${dateFrom.toISOString()} - ${dateTo.toISOString()}`);
+
+        // Продано книг (из таблицы Analytics)
+        const booksRes = await db.pool.query(`
+            SELECT SUM("BookCount") as total FROM "Analytics"
+            WHERE "CompletedDate" >= $1 AND "CompletedDate" <= $2
+        `, [dateFrom, dateTo]);
+        const booksSold = parseInt(booksRes.rows[0]?.total) || 0;
+        console.log(`📚 [DEBUG] Продано книг: ${booksSold}`);
+
+        // Новые клиенты
+        const clientsRes = await db.pool.query(`
+            SELECT COUNT(DISTINCT "ClientID") as total FROM "Analytics"
+            WHERE "CompletedDate" >= $1 AND "CompletedDate" <= $2
+        `, [dateFrom, dateTo]);
+        const newClients = parseInt(clientsRes.rows[0]?.total) || 0;
+        console.log(`👥 [DEBUG] Новых клиентов: ${newClients}`);
+
+        // Прибыль (из таблицы Analytics)
+        const revenueRes = await db.pool.query(`
+            SELECT SUM("TotalAmount") as total FROM "Analytics"
+            WHERE "CompletedDate" >= $1 AND "CompletedDate" <= $2
+        `, [dateFrom, dateTo]);
+        const revenue = parseFloat(revenueRes.rows[0]?.total) || 0;
+        console.log(`💰 [DEBUG] Прибыль: ${revenue}`);
+
+        // Завершённо заказов (из таблицы Analytics)
+        const ordersRes = await db.pool.query(`
+            SELECT COUNT(*) as total FROM "Analytics"
+            WHERE "CompletedDate" >= $1 AND "CompletedDate" <= $2
+        `, [dateFrom, dateTo]);
+        const completedOrders = parseInt(ordersRes.rows[0]?.total) || 0;
+        console.log(`📦 [DEBUG] Завершено заказов: ${completedOrders}`);
+
+        // Популярная книга (из OrderItems + Analytics)
+        const popularRes = await db.pool.query(`
+            SELECT b."Title", SUM(oi."Quantity") as total 
+            FROM "OrderItems" oi
+            JOIN "Books" b ON oi."BookID" = b."BookID"
+            JOIN "Analytics" a ON oi."OrderID" = a."OrderID"
+            WHERE a."CompletedDate" >= $1 AND a."CompletedDate" <= $2
+            GROUP BY b."BookID", b."Title"
+            ORDER BY total DESC
+            LIMIT 1
+        `, [dateFrom, dateTo]);
+        const popularBook = popularRes.rows[0]?.Title || '-';
+        console.log(`⭐ [DEBUG] Популярная книга: ${popularBook}`);
+
+        // Средний чек (из таблицы Analytics)
+        const avgCheckRes = await db.pool.query(`
+            SELECT AVG("TotalAmount") as avg FROM "Analytics"
+            WHERE "CompletedDate" >= $1 AND "CompletedDate" <= $2
+        `, [dateFrom, dateTo]);
+        const avgCheck = avgCheckRes.rows[0]?.avg ? Math.round(parseFloat(avgCheckRes.rows[0].avg) * 100) / 100 : 0;
+        console.log(`🎯 [DEBUG] Средний чек: ${avgCheck}`);
+
+        console.log(`💳 [DEBUG] Завершено заказов в периоде: ${completedOrders}`);
+
+        res.json({
+            booksSold,
+            newClients,
+            revenue: Math.round(revenue * 100) / 100,
+            completedOrders,
+            popularBook,
+            avgCheck,
+            period,
+            dateFrom: dateFrom.toISOString().split('T')[0],
+            dateTo: dateTo.toISOString().split('T')[0]
+        });
+
+    } catch (err) {
+        console.error('❌ Ошибка получения аналитики:', err);
+        res.status(500).json({ error: 'Ошибка получения аналитики: ' + err.message });
+    }
+});
+
+// Скачивание отчёта - ВАЖНО: должен быть ДО fallback маршрута!
+app.post('/api/admin/analytics/download', async (req, res) => {
+    try {
+        if (req.session.userType !== 'employee') {
+            return res.status(403).json({ error: 'Доступ запрещен' });
+        }
+
+        const { period, data } = req.body;
+
+        try {
+            // Создаём простой но валидный DOCX
+            const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p><w:r><w:t>АНАЛИТИЧЕСКИЙ ОТЧЁТ</w:t></w:r></w:p>
+    <w:p><w:r><w:t/></w:r></w:p>
+    <w:p><w:r><w:t>Период: ${period === 'day' ? 'День' : period === 'week' ? 'Неделя' : period === 'month' ? 'Месяц' : 'Год'}</w:t></w:r></w:p>
+    <w:p><w:r><w:t>Дата создания: ${new Date().toLocaleDateString('ru-RU')}</w:t></w:r></w:p>
+    <w:p><w:r><w:t/></w:r></w:p>
+    <w:p><w:r><w:t>ОСНОВНЫЕ ПОКАЗАТЕЛИ:</w:t></w:r></w:p>
+    <w:p><w:r><w:t/></w:r></w:p>
+    <w:p><w:r><w:t>Продано книг: ${data.booksSold}</w:t></w:r></w:p>
+    <w:p><w:r><w:t>Новых клиентов: ${data.newClients}</w:t></w:r></w:p>
+    <w:p><w:r><w:t>Прибыль: ${data.revenue} BYN</w:t></w:r></w:p>
+    <w:p><w:r><w:t>Завершённо заказов: ${data.completedOrders}</w:t></w:r></w:p>
+    <w:p><w:r><w:t>Популярная книга: ${data.popularBook}</w:t></w:r></w:p>
+    <w:p><w:r><w:t>Средний чек: ${data.avgCheck} BYN</w:t></w:r></w:p>
+    <w:p><w:r><w:t/></w:r></w:p>
+    <w:p><w:r><w:t>Период анализа: с ${data.dateFrom} по ${data.dateTo}</w:t></w:r></w:p>
+    <w:p><w:r><w:t>Отчёт создан: ${new Date().toLocaleString('ru-RU')}</w:t></w:r></w:p>
+  </w:body>
+</w:document>`;
+
+            const relationshipsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`;
+
+            const contentTypesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>`;
+
+            const JSZip = require('jszip');
+            const zip = new JSZip();
+            
+            zip.file('[Content_Types].xml', contentTypesXml);
+            zip.folder('_rels').file('.rels', relationshipsXml);
+            zip.folder('word').file('document.xml', documentXml);
+            
+            const docContent = await zip.generateAsync({ type: 'nodebuffer' });
+
+            res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+            res.setHeader('Content-Disposition', `attachment; filename="analytics_${period}_${new Date().toISOString().split('T')[0]}.docx"`);
+            res.send(docContent);
+
+        } catch (err) {
+            console.error('❌ Ошибка создания DOCX:', err);
+            res.status(500).json({ error: 'Ошибка создания отчёта' });
+        }
+
+    } catch (err) {
+        console.error('❌ Ошибка скачивания аналитики:', err);
+        res.status(500).json({ error: 'Ошибка скачивания аналитики: ' + err.message });
+    }
+});
+
 app.use(express.static(path.join(__dirname)));
 
 // --- Fallback SPA ---
 app.use((req,res)=>{
     if(req.path.startsWith("/api")) return res.status(404).json({ error: "API endpoint not found" });
-    // Передаем clientId (если есть) в шаблон
     res.render('index.ejs', { clientId: req.session.clientId || null });
 });
 

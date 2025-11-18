@@ -18,6 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
     applyFilters(); // Загрузка книг с текущими фильтрами
     updateCartCount();
     setupEventListeners();
+    setupAdminPanelEventListeners();
 });
 
 // ------------------------------
@@ -50,10 +51,9 @@ async function fetchCart(silent = false) {
     return cart;
 }
 
-
 async function updateCartCount() {
     try {
-        await fetchCart(true); // передаем флаг "silent" — не показывать уведомления
+        await fetchCart(true);
         const cartCount = document.querySelector('.cart-count');
         if (cartCount) {
             const totalItems = cart.reduce((sum, item) => sum + (item.Quantity || 0), 0);
@@ -98,7 +98,7 @@ async function removeFromCart(bookId) {
 }
 
 // ------------------------------
-// Модалка заказа (функции определены в логическом порядке)
+// Модалка заказа
 // ------------------------------
 let newCardFormVisible = false;
 
@@ -138,18 +138,18 @@ function createOrderModal() {
                         <option value="">Выберите карту</option>
                     </select>
                 </div>
+                <div id="balanceWarning" style="display: none; color: #f44336; font-size: 0.9rem; margin-top: 0.5rem;"></div>
                 <div class="order-total">
                     <p>Сумма товаров: <span id="cartTotalAmount">0 BYN</span></p>
                     <p>Доставка: <span id="deliveryFee">0 BYN</span></p>
                     <p><strong>Итого: <span id="finalTotal">0 BYN</span></strong></p>
                 </div>
-                <button type="submit" class="submit-order-btn">Оформить заказ</button>
+                <button type="submit" id="submitOrderBtn" class="submit-order-btn">Оформить заказ</button>
             </form>
         </div>
     `;
     document.body.appendChild(modal);
     
-    // Обработчики в JS вместо inline
     const closeBtn = modal.querySelector('.close-modal');
     closeBtn.addEventListener('click', closeOrderModal);
     
@@ -174,36 +174,27 @@ function toggleAddressField(deliveryType) {
     const addressInput = document.getElementById('orderAddress');
     
     if (deliveryType === 'pickup') {
-        // Самовывоз - скрываем адрес и удаляем required
         addressGroup.style.display = 'none';
         addressInput.removeAttribute('required');
-        addressInput.value = ''; // Очищаем значение
+        addressInput.value = '';
     } else {
-        // Доставка - показываем адрес и добавляем required
         addressGroup.style.display = 'block';
         addressInput.setAttribute('required', 'required');
     }
 }
 
 function attachOrderEvents() {
-    // Доставка: change для radio
     const deliveryRadios = document.querySelectorAll('input[name="delivery"]');
     deliveryRadios.forEach(radio => {
-        radio.removeEventListener('change', calculateTotal); // Убираем дубли
+        radio.removeEventListener('change', calculateTotal);
         radio.addEventListener('change', calculateTotal);
     });
     
-    // Карта: change для select
     const orderCardSelect = document.getElementById('orderCard');
     if (orderCardSelect) {
         orderCardSelect.removeEventListener('change', checkBalance);
         orderCardSelect.addEventListener('change', checkBalance);
     }
-}
-
-function toggleNewCardForm() {
-    // Функция больше не нужна, но оставим для совместимости
-    console.log('Добавление карт отключено');
 }
 
 // ------------------------------
@@ -213,7 +204,6 @@ async function handleCheckout() {
     try {
         console.log('📝 [DEBUG] handleCheckout - начало проверки...');
         
-        // 1. Проверяем авторизацию и роль ДО всего
         const meRes = await fetch('/api/me', { credentials: 'include' });
         if (!meRes.ok) {
             console.log('❌ [DEBUG] handleCheckout - не авторизован');
@@ -225,7 +215,6 @@ async function handleCheckout() {
         const user = await meRes.json();
         console.log('👤 [DEBUG] handleCheckout - пользователь:', user);
 
-        // Блокируем гостей
         if (user.isGuest) {
             console.log('❌ [DEBUG] handleCheckout - гостевой аккаунт');
             showNotification('Гостям запрещено оформлять заказы. Пожалуйста, зарегистрируйтесь');
@@ -233,7 +222,6 @@ async function handleCheckout() {
             return;
         }
         
-        // Блокируем администраторов
         if (user.userType === 'employee') {
             console.log('❌ [DEBUG] handleCheckout - администратор');
             showNotification('Администраторы не могут оформлять заказы');
@@ -242,7 +230,6 @@ async function handleCheckout() {
 
         console.log('✅ [DEBUG] handleCheckout - авторизация успешна, проверяю корзину...');
 
-        // 2. Только ПОСЛЕ проверки авторизации проверяем корзину
         const cartRes = await fetch('/api/cart', { credentials: 'include' });
         if (cartRes.status === 403) {
             console.log('❌ [DEBUG] handleCheckout - доступ к корзине запрещен');
@@ -263,8 +250,6 @@ async function handleCheckout() {
         }
 
         console.log('✅ [DEBUG] handleCheckout - все проверки пройдены, открываю форму...');
-
-        // 3. ТОЛЬКО ТЕПЕРЬ открываем форму!
         await openOrderModal();
 
     } catch (err) {
@@ -278,14 +263,12 @@ async function openOrderModal() {
     try {
         console.log('📝 [DEBUG] openOrderModal - начало открытия...');
         
-        // Удаляем старую модалку если была
         const oldModal = document.getElementById('orderModal');
         if (oldModal) {
             console.log('📝 [DEBUG] openOrderModal - удаляю старую модалку...');
             oldModal.remove();
         }
         
-        // Создаём НОВУЮ модалку
         console.log('📝 [DEBUG] openOrderModal - создаю новую модалку...');
         createOrderModal();
         
@@ -313,7 +296,6 @@ function closeOrderModal() {
     const modal = document.getElementById('orderModal');
     if (modal) {
         modal.style.display = 'none';
-        // Дополнительно удаляем из DOM через небольшую задержку
         setTimeout(() => {
             if (modal && modal.parentElement) {
                 modal.remove();
@@ -324,7 +306,6 @@ function closeOrderModal() {
 
 async function loadUserDataAndCards() {
     try {
-        // Проверяем авторизацию ПЕРЕД загрузкой карт
         const userRes = await fetch('/api/me', { credentials: 'include' });
         if (!userRes.ok) {
             console.log('❌ [DEBUG] loadUserDataAndCards - не авторизован (статус:', userRes.status, ')');
@@ -337,7 +318,6 @@ async function loadUserDataAndCards() {
         const user = await userRes.json();
         console.log('👤 [DEBUG] loadUserDataAndCards - user:', user);
         
-        // Проверяем, что это не гость и не сотрудник
         if (user.isGuest || user.userType !== 'client') {
             console.log('❌ [DEBUG] loadUserDataAndCards - недопустимый тип пользователя:', user.userType);
             showNotification('Ошибка: некорректный тип пользователя');
@@ -349,7 +329,6 @@ async function loadUserDataAndCards() {
         const orderName = document.getElementById('orderName');
         if (orderName) orderName.textContent = user.FullName || 'Пользователь';
         
-        // Загружаем карты
         console.log('📝 [DEBUG] loadUserDataAndCards - загружаю карты...');
         const cardsRes = await fetch('/api/cards', { credentials: 'include' });
         
@@ -398,7 +377,6 @@ async function loadUserDataAndCards() {
             }
         }
         
-        // Загружаем корзину для суммы
         console.log('📝 [DEBUG] loadUserDataAndCards - загружаю корзину...');
         await fetchCart();
         const cartTotalAmount = document.getElementById('cartTotalAmount');
@@ -407,7 +385,7 @@ async function loadUserDataAndCards() {
             cartTotalAmount.textContent = `${total} BYN`;
             console.log('✅ [DEBUG] loadUserDataAndCards - сумма корзины:', total);
         }
-        checkBalance();  // Проверка после загрузки
+        checkBalance();
         
     } catch (err) {
         console.error('❌ [DEBUG] loadUserDataAndCards - критическая ошибка:', err);
@@ -431,7 +409,7 @@ function calculateTotal() {
     const finalTotalEl = document.getElementById('finalTotal');
     if (deliveryFeeEl) deliveryFeeEl.textContent = `${fee} BYN`;
     if (finalTotalEl) finalTotalEl.textContent = `${finalTotal} BYN`;
-    checkBalance();  // Проверка после изменения суммы
+    checkBalance();
 }
 
 function checkBalance() {
@@ -537,7 +515,6 @@ async function submitOrder(e) {
             return;
         }
         
-        // Успех!
         console.log('✅ [DEBUG] submitOrder - Заказ успешно создан!');
         const orderNumber = document.getElementById('orderNumber');
         if (orderNumber) orderNumber.textContent = result.orderId;
@@ -548,7 +525,6 @@ async function submitOrder(e) {
         await displayCartItems();
         closeCart();
         
-        // Открываем личный кабинет с вкладкой текущих заказов
         if (window.openAccountModal) {
             setTimeout(() => window.openAccountModal(), 500);
         }
@@ -578,14 +554,12 @@ function displayBooks(books) {
             </div>
         </div>
     `).join('');
-    // Кнопки "Добавить в корзину"
     booksGrid.querySelectorAll('.add-to-cart-btn').forEach(btn => {
         btn.addEventListener('click', async e => {
             e.stopPropagation();
             await addToCart(btn.dataset.id);
         });
     });
-    // Клик по карточке книги
     booksGrid.querySelectorAll('.book-card').forEach(card => {
         card.addEventListener('click', () => openBookModal(card.dataset.id));
     });
@@ -619,7 +593,6 @@ function createBookModal() {
         </div>
     `;
     document.body.appendChild(modal);
-    // Закрытие кликом вне модалки
     modal.addEventListener('click', e => { if (e.target === modal) closeBookModal(); });
     const closeBtn = document.getElementById('closeBookModalBtn');
     if (closeBtn) closeBtn.addEventListener('click', closeBookModal);
@@ -661,7 +634,6 @@ function closeBookModal() {
 // ------------------------------
 async function openCart() {
     try {
-        // Проверяем, что это не администратор
         const meRes = await fetch('/api/me', { credentials: 'include' });
         if (!meRes.ok) {
             showNotification('Ошибка проверки прав доступа');
@@ -670,7 +642,6 @@ async function openCart() {
         
         const user = await meRes.json();
         
-        // Блокируем корзину для администраторов
         if (user.userType === 'employee') {
             showNotification('Администраторы не могут использовать корзину');
             return;
@@ -730,6 +701,225 @@ async function applyFilters() {
 }
 
 // ------------------------------
+// Admin Panel
+// ------------------------------
+function setupAdminPanelEventListeners() {
+    const deleteBookBtn = document.getElementById('deleteBookBtn');
+    if (deleteBookBtn) {
+        deleteBookBtn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            
+            const title = prompt('Введите название книги для удаления:');
+            if (!title || title.trim() === '') {
+                showNotification('Название не введено');
+                return;
+            }
+            
+            if (!confirm(`Вы уверены, что хотите удалить книгу "${title}"?`)) {
+                return;
+            }
+            
+            try {
+                console.log(`🗑️ [DEBUG] Удаляю книгу: "${title}"`);
+                
+                const res = await fetch('/api/admin/books/delete-by-title', {
+                    method: 'DELETE',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title: title.trim() })
+                });
+                
+                const result = await res.json();
+                
+                if (!res.ok) {
+                    console.error(`❌ [DEBUG] Ошибка удаления:`, result.error);
+                    showNotification(`Ошибка: ${result.error}`);
+                    return;
+                }
+                
+                console.log(`✅ [DEBUG] Книга удалена успешно`);
+                showNotification(`✅ Книга "${result.bookTitle}" успешно удалена!`);
+                
+                await applyFilters();
+                
+            } catch (err) {
+                console.error(`❌ [DEBUG] Критическая ошибка при удалении:`, err);
+                showNotification(`Ошибка удаления: ${err.message}`);
+            }
+        });
+    }
+    
+    const addBookForm = document.getElementById('addBookForm');
+    if (addBookForm) {
+        addBookForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const title = document.getElementById('bookTitle')?.value.trim();
+            const author = document.getElementById('bookAuthor')?.value.trim();
+            const publisher = document.getElementById('bookPublisher')?.value.trim();
+            const genre = document.getElementById('bookGenre')?.value.trim();
+            const year = document.getElementById('bookYear')?.value.trim();
+            const pages = document.getElementById('bookPages')?.value.trim();
+            const rating = document.getElementById('bookRating')?.value.trim();
+            const price = document.getElementById('bookPrice')?.value.trim();
+            const description = document.getElementById('bookDescription')?.value.trim();
+            
+            if (!title || !price) {
+                showNotification('Название и цена обязательны');
+                return;
+            }
+            
+            try {
+                console.log('📝 [DEBUG] Отправляю форму добавления книги...');
+                
+                const res = await fetch('/api/admin/books/add', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        title,
+                        author,
+                        publisher,
+                        genre,
+                        year,
+                        pages,
+                        rating,
+                        price,
+                        description
+                    })
+                });
+                
+                const result = await res.json();
+                
+                if (!res.ok) {
+                    console.error(`❌ [DEBUG] Ошибка добавления:`, result.error);
+                    showNotification(`Ошибка: ${result.error}`);
+                    return;
+                }
+                
+                console.log(`✅ [DEBUG] Книга добавлена успешно`);
+                showNotification(`✅ Книга "${result.book.Title}" успешно добавлена!`);
+                
+                addBookForm.reset();
+                
+                await applyFilters();
+                
+            } catch (err) {
+                console.error(`❌ [DEBUG] Критическая ошибка при добавлении:`, err);
+                showNotification(`Ошибка добавления: ${err.message}`);
+            }
+        });
+    }
+
+    // НОВОЕ: Обработчик загрузки JSON файла
+    const jsonFileInput = document.getElementById('jsonFileInput');
+    if (jsonFileInput) {
+        jsonFileInput.addEventListener('change', handleJsonUpload);
+    }
+}
+
+async function handleJsonUpload(e) {
+    const file = e.target.files[0];
+    if (!file) {
+        console.log('❌ Файл не выбран');
+        return;
+    }
+
+    console.log(`📂 [DEBUG] Загружаю JSON файл: ${file.name}`);
+
+    try {
+        const reader = new FileReader();
+        
+        reader.onload = async (event) => {
+            try {
+                const json = JSON.parse(event.target.result);
+                console.log('📄 [DEBUG] JSON распарсен успешно:', json);
+
+                // Проверяем, это массив или одна книга
+                const books = Array.isArray(json) ? json : [json];
+                
+                if (books.length === 0) {
+                    showNotification('❌ JSON не содержит книг');
+                    return;
+                }
+
+                console.log(`📚 [DEBUG] Найдено книг: ${books.length}`);
+
+                let successCount = 0;
+                let errorCount = 0;
+
+                // Загружаем каждую книгу
+                for (const book of books) {
+                    try {
+                        console.log(`➕ [DEBUG] Добавляю книгу: ${book.title}`);
+                        
+                        const res = await fetch('/api/admin/books/add', {
+                            method: 'POST',
+                            credentials: 'include',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                title: book.title || book.Title || '',
+                                author: book.author || book.Author || '',
+                                publisher: book.publisher || book.Publisher || '',
+                                genre: book.genre || book.Genre || '',
+                                year: book.year || book.Year || '',
+                                pages: book.pages || book.Pages || '',
+                                rating: book.rating || book.Rating || '',
+                                price: book.price || book.Price || 0,
+                                description: book.description || book.Description || ''
+                            })
+                        });
+
+                        if (res.ok) {
+                            const result = await res.json();
+                            console.log(`✅ [DEBUG] Книга добавлена: ${result.book.Title}`);
+                            successCount++;
+                        } else {
+                            const error = await res.json();
+                            console.error(`❌ [DEBUG] Ошибка добавления:`, error.error);
+                            errorCount++;
+                        }
+
+                    } catch (err) {
+                        console.error(`❌ [DEBUG] Ошибка при обработке книги:`, err);
+                        errorCount++;
+                    }
+                }
+
+                // Уведомление о результатах
+                if (successCount > 0) {
+                    showNotification(`✅ Загружено ${successCount} книг`);
+                }
+                if (errorCount > 0) {
+                    showNotification(`⚠️ Ошибки при загрузке ${errorCount} книг`);
+                }
+
+                // Перезагружаем каталог
+                await applyFilters();
+
+                // Очищаем input
+                document.getElementById('jsonFileInput').value = '';
+
+            } catch (parseErr) {
+                console.error('❌ [DEBUG] Ошибка парсинга JSON:', parseErr);
+                showNotification('❌ Ошибка парсинга JSON файла. Проверьте формат.');
+            }
+        };
+
+        reader.onerror = () => {
+            console.error('❌ [DEBUG] Ошибка чтения файла');
+            showNotification('❌ Ошибка чтения файла');
+        };
+
+        reader.readAsText(file);
+
+    } catch (err) {
+        console.error('❌ [DEBUG] Критическая ошибка при загрузке JSON:', err);
+        showNotification(`❌ Ошибка: ${err.message}`);
+    }
+}
+
+// ------------------------------
 // Events & setup
 // ------------------------------
 function setupEventListeners() {
@@ -740,10 +930,12 @@ function setupEventListeners() {
             if (catalog) catalog.scrollIntoView({ behavior: 'smooth' });
         });
     }
+    
     const cartIcon = document.getElementById('cartIcon');
     if (cartIcon) {
         cartIcon.addEventListener('click', openCart);
     }
+    
     const categoryFilter = document.getElementById('category-filter');
     if (categoryFilter) {
         categoryFilter.addEventListener('change', e => {
@@ -751,6 +943,7 @@ function setupEventListeners() {
             applyFilters();
         });
     }
+    
     const sortFilter = document.getElementById('sort-filter');
     if (sortFilter) {
         sortFilter.addEventListener('change', e => {
@@ -758,6 +951,7 @@ function setupEventListeners() {
             applyFilters();
         });
     }
+    
     const searchInput = document.getElementById('search-input');
     if (searchInput) {
         searchInput.addEventListener('input', e => {
@@ -765,38 +959,14 @@ function setupEventListeners() {
             applyFilters();
         });
     }
-    const dropdownToggle = document.querySelector('.dropdown-toggle');
-    if (dropdownToggle) {
-        dropdownToggle.addEventListener('click', e => {
-            e.preventDefault(); // Предотвращаем скролл к #categories
-            const dropdown = e.target.closest('.dropdown');
-            if (dropdown) dropdown.classList.toggle('open'); // Toggle показа меню
-        });
-    }
-    // Клик по ссылкам в меню категорий
-    const dropdownLinks = document.querySelectorAll('.dropdown-menu a[data-category]');
-    dropdownLinks.forEach(link => {
-        link.addEventListener('click', e => {
-            e.preventDefault();
-            const category = link.dataset.category;
-            currentFilters.category = category;
-            
-            // Синхронизируем селект снизу
-            const categorySelect = document.getElementById('category-filter');
-            if (categorySelect) {
-                categorySelect.value = category; // Устанавливаем выбранный option
-            }
-            
-            applyFilters();
-            // Прокрутка к каталогу после фильтра
-            const catalog = document.getElementById('catalog');
-            if (catalog) catalog.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            // Закрыть меню
-            const dropdown = link.closest('.dropdown');
-            if (dropdown) dropdown.classList.remove('open');
-        });
-    });
-    // Плавный скролл для остальных якорей (пропускаем data-category)
+    
+    const cartClose = document.querySelector('#cartModal .close-modal');
+    if (cartClose) cartClose.addEventListener('click', closeCart);
+    
+    const checkoutBtn = document.querySelector('.checkout-btn');
+    if (checkoutBtn) checkoutBtn.addEventListener('click', handleCheckout);
+    
+    // Плавный скролл для якорей
     document.querySelectorAll('a[href^="#"]').forEach(anchor => {
         anchor.addEventListener('click', e => {
             if (anchor.hasAttribute('data-category') || anchor.classList.contains('dropdown-toggle')) return;
@@ -805,10 +975,6 @@ function setupEventListeners() {
             if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
         });
     });
-    const cartClose = document.querySelector('#cartModal .close-modal');
-    if (cartClose) cartClose.addEventListener('click', closeCart);
-    const checkoutBtn = document.querySelector('.checkout-btn');
-    if (checkoutBtn) checkoutBtn.addEventListener('click', handleCheckout);
 }
 
 // ------------------------------

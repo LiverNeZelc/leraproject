@@ -130,6 +130,21 @@ async function initDB() {
     );
 `);
 
+        // НОВАЯ ТАБЛИЦА ДЛЯ АНАЛИТИКИ
+        await client.query(`
+        CREATE TABLE IF NOT EXISTS "Analytics" (
+            "AnalyticsID" SERIAL PRIMARY KEY,
+            "OrderID" INT NOT NULL,
+            "ClientID" INT REFERENCES "Clients"("ClientID"),
+            "TotalAmount" DECIMAL(10,2),
+            "DeliveryMethod" VARCHAR(100),
+            "CompletedDate" DATE DEFAULT CURRENT_DATE,
+            "BookCount" INT,
+            "Status" VARCHAR(50)
+        );
+        CREATE INDEX IF NOT EXISTS "idx_analytics_completed_date" ON "Analytics"("CompletedDate");
+        `);
+
         await client.query('COMMIT');
         console.log('✅ Database initialized successfully');
     } catch (err) {
@@ -538,8 +553,13 @@ async function deleteOrder(orderId, clientId) {
 }
 
 async function deleteBook(bookId) {
-    // Удаляем книгу только из таблицы Books
-    // Связи через foreign keys будут сохранены в других таблицах
+    // Удаляем записи из Carts, которые ссылаются на эту книгу
+    await pool.query(`DELETE FROM "Carts" WHERE "BookID" = $1`, [bookId]);
+    
+    // Удаляем записи из OrderItems, которые ссылаются на эту книгу
+    await pool.query(`DELETE FROM "OrderItems" WHERE "BookID" = $1`, [bookId]);
+    
+    // Теперь удаляем саму книгу
     const res = await pool.query(
         `DELETE FROM "Books" WHERE "BookID" = $1 RETURNING *`,
         [bookId]
@@ -548,12 +568,66 @@ async function deleteBook(bookId) {
 }
 
 async function deleteBookByTitle(title) {
-    // Удаляем книгу по названию
-    const res = await pool.query(
-        `DELETE FROM "Books" WHERE "Title" = $1 RETURNING *`,
+    // Сначала найдём ID книги
+    const bookRes = await pool.query(
+        `SELECT "BookID" FROM "Books" WHERE "Title" = $1`,
         [title]
     );
+    
+    if (!bookRes.rows.length) {
+        throw new Error(`Книга с названием "${title}" не найдена`);
+    }
+    
+    const bookId = bookRes.rows[0].BookID;
+    
+    // Удаляем записи из Carts, которые ссылаются на эту книгу
+    await pool.query(`DELETE FROM "Carts" WHERE "BookID" = $1`, [bookId]);
+    
+    // Удаляем записи из OrderItems, которые ссылаются на эту книгу
+    await pool.query(`DELETE FROM "OrderItems" WHERE "BookID" = $1`, [bookId]);
+    
+    // Теперь удаляем саму книгу
+    const res = await pool.query(
+        `DELETE FROM "Books" WHERE "BookID" = $1 RETURNING *`,
+        [bookId]
+    );
     return res.rows[0];
+}
+
+// Функция для логирования завершённого заказа в аналитику
+async function logOrderToAnalytics(orderId) {
+    try {
+        console.log(`📊 [DEBUG] Логирую заказ #${orderId} в аналитику...`);
+        
+        // Получаем данные заказа
+        const orderRes = await pool.query(
+            `SELECT o."OrderID", o."ClientID", o."TotalAmount", d."DeliveryMethod",
+                    (SELECT COUNT(*) FROM "OrderItems" WHERE "OrderID" = $1) as book_count
+             FROM "Orders" o
+             LEFT JOIN "Deliveries" d ON o."OrderID" = d."OrderID"
+             WHERE o."OrderID" = $1`,
+            [orderId]
+        );
+        
+        if (!orderRes.rows.length) {
+            console.log(`⚠️ [DEBUG] Заказ #${orderId} не найден`);
+            return;
+        }
+        
+        const order = orderRes.rows[0];
+        
+        // Логируем в аналитику
+        await pool.query(
+            `INSERT INTO "Analytics" ("OrderID", "ClientID", "TotalAmount", "DeliveryMethod", "BookCount", "Status")
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [order.OrderID, order.ClientID, order.TotalAmount, order.DeliveryMethod, order.book_count, 'Завершён']
+        );
+        
+        console.log(`✅ [DEBUG] Заказ #${orderId} залогирован в аналитику`);
+        
+    } catch (err) {
+        console.error(`❌ [DEBUG] Ошибка логирования в аналитику:`, err);
+    }
 }
 
 // --- Экспортируем ---
@@ -582,4 +656,5 @@ module.exports = {
     getOrdersByStatus,
     getDeliveryOrders,
     deleteOrder,
+    logOrderToAnalytics,
 };
