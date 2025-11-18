@@ -71,7 +71,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 ordersContainer.innerHTML = '<p class="muted">Заказы не найдены</p>';
                                 return;
                             }
-                            throw new Error(error.error || 'Ошибка загрузки заказов');
+                            throw new Error(error.error || 'Заказы не найдены');
                         }
                         const orders = await res.json();
 
