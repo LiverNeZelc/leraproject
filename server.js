@@ -455,7 +455,36 @@ app.get("/api/orders/history", async (req, res) => {
     }
 });
 
-// Поиск заказов по номеру телефона
+// Удаление завершённого заказа (ВАЖНО: должен быть ДО /api/admin/orders)
+app.delete('/api/orders/:orderId', async (req, res) => {
+    try {
+        if (req.session.userType !== 'client') {
+            return res.status(403).json({ error: 'Доступ запрещен' });
+        }
+        
+        const clientId = await getSessionClientId(req);
+        const { orderId } = req.params;
+        
+        // Проверяем, что заказ принадлежит текущему клиенту
+        const orderRes = await db.pool.query(
+            `SELECT * FROM "Orders" WHERE "OrderID" = $1 AND "ClientID" = $2`,
+            [orderId, clientId]
+        );
+        
+        if (!orderRes.rows.length) {
+            return res.status(404).json({ error: 'Заказ не найден' });
+        }
+        
+        // Удаляем заказ
+        await db.deleteOrder(orderId, clientId);
+        res.json({ message: 'Заказ удалён' });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Ошибка удаления заказа' });
+    }
+});
+
+// Поиск заказов (ЕДИНСТВЕННЫЙ маршрут для /api/admin/orders)
 app.get('/api/admin/orders', async (req, res) => {
     try {
         if (req.session.userType !== 'employee') {
@@ -487,8 +516,18 @@ app.get('/api/admin/orders', async (req, res) => {
             return res.json(orders);
         }
 
-        console.log('⚠️ [DEBUG] Некорректный запрос: отсутствуют параметры phone или status');
-        return res.status(400).json({ error: 'Необходимо указать параметр phone или status' });
+        // Если нет параметров, возвращаем заказы с доставкой
+        console.log('🔍 [DEBUG] Получен запрос на поиск заказов с доставкой');
+        const orders = await db.getDeliveryOrders();
+        console.log(`✅ [DEBUG] Найдено заказов с доставкой: ${orders.length}`);
+
+        if (!orders || orders.length === 0) {
+            console.log('⚠️ [DEBUG] Заказы с доставкой не найдены');
+            return res.status(404).json({ error: 'Заказы с доставкой не найдены' });
+        }
+
+        console.log('📤 [DEBUG] Отправка заказов клиенту');
+        res.json(orders);
     } catch (err) {
         console.error('❌ [DEBUG] Ошибка получения заказов:', err);
         res.status(500).json({ error: 'Ошибка получения заказов' });
@@ -510,67 +549,6 @@ app.post('/api/admin/orders/:orderId/complete', async (req, res) => {
     }
 });
 
-// Поиск заказов по статусу
-app.get('/api/admin/orders', async (req, res) => {
-    try {
-        if (req.session.userType !== 'employee') {
-            console.log('Доступ запрещен: пользователь не является сотрудником');
-            return res.status(403).json({ error: 'Доступ запрещен' });
-        }
-
-        const { status } = req.query;
-        if (!status) {
-            console.log('Ошибка: параметр "status" отсутствует');
-            return res.status(400).json({ error: 'Параметр "status" обязателен' });
-        }
-
-        console.log(`Получен запрос на поиск заказов с параметром status: "${status}"`);
-
-        // Декодируем параметр status (на случай, если он URL-encoded)
-        const decodedStatus = decodeURIComponent(status);
-        console.log(`Декодированный статус: "${decodedStatus}"`);
-
-        // Получаем заказы по статусу
-        const orders = await db.getOrdersByStatus(decodedStatus);
-        if (!orders || orders.length === 0) {
-            console.log(`Заказы не найдены для статуса: "${decodedStatus}"`);
-            return res.status(404).json({ error: 'Заказы не найдены' });
-        }
-
-        console.log(`Найдено заказов: ${orders.length}`);
-        res.json(orders);
-    } catch (err) {
-        console.error('Ошибка получения заказов:', err);
-        res.status(500).json({ error: 'Ошибка получения заказов' });
-    }
-});
-
-// Поиск заказов по доставке
-app.get('/api/admin/orders', async (req, res) => {
-    try {
-        console.log('🔍 [DEBUG] Получен запрос на поиск заказов с доставкой');
-        if (req.session.userType !== 'employee') {
-            console.log('⛔ [DEBUG] Доступ запрещен: пользователь не является сотрудником');
-            return res.status(403).json({ error: 'Доступ запрещен' });
-        }
-
-        console.log('📥 [DEBUG] Вызов функции getDeliveryOrders');
-        const orders = await db.getDeliveryOrders();
-        console.log(`✅ [DEBUG] Найдено заказов с доставкой: ${orders.length}`);
-
-        if (!orders || orders.length === 0) {
-            console.log('⚠️ [DEBUG] Заказы с доставкой не найдены');
-            return res.status(404).json({ error: 'Заказы с доставкой не найдены' });
-        }
-
-        console.log('📤 [DEBUG] Отправка заказов клиенту');
-        res.json(orders);
-    } catch (err) {
-        console.error('❌ [DEBUG] Ошибка получения заказов с доставкой:', err);
-        res.status(500).json({ error: 'Ошибка получения заказов с доставкой' });
-    }
-});
-
 app.use(express.static(path.join(__dirname)));
 
 // --- Fallback SPA ---
@@ -579,8 +557,6 @@ app.use((req,res)=>{
     // Передаем clientId (если есть) в шаблон
     res.render('index.ejs', { clientId: req.session.clientId || null });
 });
-
-
 
 // --- Запуск сервера ---
 app.listen(PORT, () => console.log(`🚀 Server running at http://localhost:${PORT}`));

@@ -520,6 +520,17 @@ async function getDeliveryOrders() {
     }
 }
 
+async function deleteOrder(orderId, clientId) {
+    // Удаляем OrderItems, связанные с этим заказом
+    await pool.query(`DELETE FROM "OrderItems" WHERE "OrderID" = $1`, [orderId]);
+    
+    // Удаляем Deliveries, связанные с этим заказом
+    await pool.query(`DELETE FROM "Deliveries" WHERE "OrderID" = $1`, [orderId]);
+    
+    // Удаляем сам заказ
+    await pool.query(`DELETE FROM "Orders" WHERE "OrderID" = $1 AND "ClientID" = $2`, [orderId, clientId]);
+}
+
 // --- Экспортируем ---
 module.exports = {
     pool,
@@ -545,4 +556,5 @@ module.exports = {
     getOrdersByEmployee,
     getOrdersByStatus,
     getDeliveryOrders,
+    deleteOrder,
 };

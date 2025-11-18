@@ -160,6 +160,7 @@ async function loadHistory() {
         history.forEach(o => {
             const div = document.createElement('div');
             div.className = 'order-card';
+            div.setAttribute('data-order-id', o.OrderID);
             const itemsHtml = o.Items && Array.isArray(o.Items) && o.Items.length > 0 
                 ? o.Items.map(item => `<li>${item.Title || 'Без названия'} x${item.Quantity || 1}</li>`).join('')
                 : '<li>Нет деталей</li>';
@@ -170,9 +171,34 @@ async function loadHistory() {
                 <p><strong>Телефон:</strong> ${o.Phone || 'Не указан'}</p>
                 <p><strong>Товары:</strong></p>
                 <ul>${itemsHtml}</ul>
+                <button class="delete-order-btn admin-btn" data-order-id="${o.OrderID}">Удалить заказ</button>
             `;
             historyContainer.appendChild(div);
         });
+        
+        // Добавляем обработчики для кнопок удаления
+        historyContainer.querySelectorAll('.delete-order-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const orderId = btn.getAttribute('data-order-id');
+                if (confirm('Вы уверены, что хотите удалить этот заказ?')) {
+                    try {
+                        const res = await fetch(`/api/orders/${orderId}`, {
+                            method: 'DELETE',
+                            credentials: 'include',
+                            headers: { 'Content-Type': 'application/json' }
+                        });
+                        if (!res.ok) throw new Error('Ошибка удаления заказа');
+                        showNotification('Заказ удалён');
+                        btn.closest('.order-card').remove();
+                    } catch (err) {
+                        console.error(err);
+                        showNotification('Ошибка удаления заказа');
+                    }
+                }
+            });
+        });
+        
         // Добавляем класс scrollable только при необходимости
         if (history.length > 3) {
             historyContainer.classList.add('scrollable');

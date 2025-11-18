@@ -1505,3 +1505,13 @@ footer {
 .orders-container::-webkit-scrollbar-track {
     background: rgba(255, 255, 255, 0.1);
 }
+
+.delete-order-btn {
+    background: linear-gradient(135deg, #d32f2f, #f44336) !important;
+    margin-top: 0.8rem;
+}
+
+.delete-order-btn:hover {
+    background: linear-gradient(135deg, #b71c1c, #d32f2f) !important;
+    box-shadow: 0 4px 15px rgba(244, 67, 54, 0.4) !important;
+}
