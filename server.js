@@ -240,62 +240,130 @@ app.post("/api/cards", async (req, res) => {
 // --- Создание заказа (новый эндпоинт) ---
 app.post("/api/orders/create", async (req, res) => {
     try {
+        console.log('📥 [DEBUG] POST /api/orders/create');
+        console.log('📥 [DEBUG] session.userType:', req.session.userType);
+        console.log('📥 [DEBUG] session.userId:', req.session.userId);
+        console.log('📥 [DEBUG] body:', req.body);
+        
         // Доступ только для зарегистрированных клиентов
         if (req.session.userType !== 'client') {
+            console.log('❌ [DEBUG] Ошибка: userType не client');
             return res.status(403).json({ error: "Доступ запрещен" });
         }
 
         const clientId = await getSessionClientId(req);
+        console.log('👤 [DEBUG] clientId:', clientId);
+        
         const user = await db.getClientById(clientId);
+        console.log('👤 [DEBUG] user:', user);
 
         // Гость не может оформить заказ
         if (!user || !user.Email) {
+            console.log('❌ [DEBUG] Ошибка: гостевой заказ');
             return res.status(403).json({ error: "Гостям запрещено оформлять заказ" });
         }
 
         const { phone, address, delivery, cardId, total } = req.body;
+        console.log('📋 [DEBUG] Параметры заказа:', { phone, address, delivery, cardId, total });
+
+        // Валидация - адрес обязателен только при доставке
+        if (!phone || !delivery || !cardId || total === null || total === undefined) {
+            console.log('❌ [DEBUG] Ошибка валидации: отсутствуют требуемые параметры');
+            return res.status(400).json({ error: "Отсутствуют требуемые параметры" });
+        }
+
+        // Адрес требуется только если не самовывоз
+        if (delivery !== 'pickup' && !address) {
+            console.log('❌ [DEBUG] Ошибка валидации: адрес требуется для доставки');
+            return res.status(400).json({ error: "Адрес доставки обязателен" });
+        }
 
         // Проверка карты
+        console.log('🔍 [DEBUG] Проверяю карту с ID:', cardId);
         const card = await cardsDb.getCardById(cardId);
-        if (!card) return res.status(400).json({ error: "Карта не найдена" });
-        if (card.Balance < total) return res.status(400).json({ error: "Недостаточно средств на карте" });
+        console.log('💳 [DEBUG] Карта:', card);
+        
+        if (!card) {
+            console.log('❌ [DEBUG] Ошибка: карта не найдена');
+            return res.status(400).json({ error: "Карта не найдена" });
+        }
+        
+        if (card.Balance < total) {
+            console.log(`❌ [DEBUG] Ошибка: недостаточно средств (баланс: ${card.Balance}, требуется: ${total})`);
+            return res.status(400).json({ error: "Недостаточно средств на карте" });
+        }
 
         // Создание заказа
+        console.log('📝 [DEBUG] Создаю заказ...');
         const order = await db.createOrder(clientId, null, total, "Новый");
+        console.log('✅ [DEBUG] Заказ создан с ID:', order.OrderID);
+        
+        // Загружаем корзину
+        console.log('🛒 [DEBUG] Загружаю корзину для клиента:', clientId);
         const cartBeforeClear = await db.getCartByClient(clientId);
+        console.log('📦 [DEBUG] Товары в корзине:', cartBeforeClear);
+        
+        // Добавляем товары в заказ
+        console.log('📝 [DEBUG] Добавляю товары в заказ...');
         await db.addOrderItems(order.OrderID, cartBeforeClear);
+        console.log('✅ [DEBUG] Товары добавлены');
 
-        // Доставка
+        // Определяем метод доставки
         let deliveryMethod = 'Самовывоз';
         let status = 'Оплачен, ожидает получения';
+        
         switch (delivery) {
-            case '3km': deliveryMethod = 'Доставка 3км'; status = 'Оплачен, ожидается доставка'; break;
-            case '5km': deliveryMethod = 'Доставка 5км'; status = 'Оплачен, ожидается доставка'; break;
-            case 'over5km': deliveryMethod = 'Доставка >5км'; status = 'Оплачен, ожидается доставка'; break;
+            case '3km': 
+                deliveryMethod = 'Доставка 3км'; 
+                status = 'Оплачен, ожидается доставка'; 
+                break;
+            case '5km': 
+                deliveryMethod = 'Доставка 5км'; 
+                status = 'Оплачен, ожидается доставка'; 
+                break;
+            case 'over5km': 
+                deliveryMethod = 'Доставка >5км'; 
+                status = 'Оплачен, ожидается доставка'; 
+                break;
         }
+        
+        console.log('🚚 [DEBUG] Добавляю доставку:', { deliveryMethod, status, phone, address });
         await db.addDelivery(order.OrderID, deliveryMethod, address, 'Ожидает', null, null, phone);
+        console.log('✅ [DEBUG] Доставка добавлена');
 
         // Списываем с карты
+        console.log(`💳 [DEBUG] Списываю ${total} с карты ${cardId}`);
         await cardsDb.updateCardBalance(cardId, card.Balance - total);
+        console.log('✅ [DEBUG] Средства списаны');
 
         // Обновляем статус
+        console.log('📊 [DEBUG] Обновляю статус заказа на:', status);
         await db.updateOrderStatus(order.OrderID, status);
+        console.log('✅ [DEBUG] Статус обновлен');
 
         // Очищаем корзину
+        console.log('🗑️ [DEBUG] Очищаю корзину');
         await db.clearCart(clientId);
+        console.log('✅ [DEBUG] Корзина очищена');
 
+        console.log('✅ [DEBUG] Заказ успешно оформлен!');
+        
         res.json({
             message: "Заказ оформлен",
             orderId: order.OrderID,
-            items: cartBeforeClear.map(item => ({ Title: item.Title, Quantity: item.Quantity, Price: item.Price }))
+            items: cartBeforeClear.map(item => ({ 
+                Title: item.Title, 
+                Quantity: item.Quantity, 
+                Price: item.Price 
+            }))
         });
 
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: "Ошибка создания заказа" });
+        console.error('❌ [DEBUG] КРИТИЧЕСКАЯ ОШИБКА в /api/orders/create:', err);
+        console.error('❌ [DEBUG] Stack:', err.stack);
+        res.status(500).json({ error: `Ошибка создания заказа: ${err.message}` });
     }
 });
-
 
 // Checkout (устаревший, теперь перенаправляет на новый)
 app.post("/api/checkout", async (req,res)=>{

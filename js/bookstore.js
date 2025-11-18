@@ -120,10 +120,6 @@ function createOrderModal() {
                     <input type="tel" id="orderPhone" required>
                 </div>
                 <div class="form-group">
-                    <label>Адрес доставки:</label>
-                    <textarea id="orderAddress" required></textarea>
-                </div>
-                <div class="form-group">
                     <label>Способ доставки:</label>
                     <div class="delivery-options">
                         <label><input type="radio" name="delivery" value="pickup" checked> Самовывоз (бесплатно)</label>
@@ -132,26 +128,15 @@ function createOrderModal() {
                         <label><input type="radio" name="delivery" value="over5km"> Более 5 км (+20 BYN)</label>
                     </div>
                 </div>
+                <div class="form-group" id="addressGroup" style="display: none;">
+                    <label>Адрес доставки:</label>
+                    <textarea id="orderAddress"></textarea>
+                </div>
                 <div class="form-group">
                     <label>Оплата картой:</label>
                     <select id="orderCard" required>
                         <option value="">Выберите карту</option>
                     </select>
-                    <button type="button" id="addNewCardBtn">Добавить новую карту</button>
-                </div>
-                <div id="newCardFields" style="display:none;">
-                    <div class="form-group">
-                        <label>Номер карты:</label>
-                        <input type="text" id="newCardNumber" placeholder="1234 5678 9012 3456" required>
-                    </div>
-                    <div class="form-group">
-                        <label>Срок действия (MM/YY):</label>
-                        <input type="text" id="newCardExpiry" placeholder="12/25" required>
-                    </div>
-                    <div class="form-group">
-                        <label>CVV:</label>
-                        <input type="text" id="newCardCVV" placeholder="123" required>
-                    </div>
                 </div>
                 <div class="order-total">
                     <p>Сумма товаров: <span id="cartTotalAmount">0 BYN</span></p>
@@ -173,15 +158,31 @@ function createOrderModal() {
     
     const deliveryRadios = modal.querySelectorAll('input[name="delivery"]');
     deliveryRadios.forEach(radio => {
-        radio.addEventListener('change', calculateTotal);
+        radio.addEventListener('change', (e) => {
+            toggleAddressField(e.target.value);
+            calculateTotal();
+        });
     });
-    
-    const addCardBtn = document.getElementById('addNewCardBtn');
-    addCardBtn.addEventListener('click', addNewCard);
     
     modal.addEventListener('click', e => {
         if (e.target === modal) closeOrderModal();
     });
+}
+
+function toggleAddressField(deliveryType) {
+    const addressGroup = document.getElementById('addressGroup');
+    const addressInput = document.getElementById('orderAddress');
+    
+    if (deliveryType === 'pickup') {
+        // Самовывоз - скрываем адрес и удаляем required
+        addressGroup.style.display = 'none';
+        addressInput.removeAttribute('required');
+        addressInput.value = ''; // Очищаем значение
+    } else {
+        // Доставка - показываем адрес и добавляем required
+        addressGroup.style.display = 'block';
+        addressInput.setAttribute('required', 'required');
+    }
 }
 
 function attachOrderEvents() {
@@ -198,86 +199,11 @@ function attachOrderEvents() {
         orderCardSelect.removeEventListener('change', checkBalance);
         orderCardSelect.addEventListener('change', checkBalance);
     }
-    
-
-    // Кнопка сохранения новой карты
-    const saveNewCardBtn = document.getElementById('saveNewCardBtn');
-    if (saveNewCardBtn) {
-        saveNewCardBtn.removeEventListener('click', saveNewCard);
-        saveNewCardBtn.addEventListener('click', saveNewCard);
-    }
 }
 
 function toggleNewCardForm() {
-    const fields = document.getElementById('newCardFields');
-    newCardFormVisible = !newCardFormVisible;
-    fields.style.display = newCardFormVisible ? 'block' : 'none';
-    if (newCardFormVisible) {
-        document.getElementById('orderCard').value = '';  // Сброс выбора
-        
-        // Динамически добавляем required при показе
-        const newCardInputs = ['newCardNumber', 'newCardExpiry', 'newCardCVV'];
-        newCardInputs.forEach(id => {
-            const input = document.getElementById(id);
-            if (input) input.required = true;
-        });
-        document.getElementById('newCardNumber').focus();
-    } else {
-        // Убираем required при скрытии
-        const newCardInputs = ['newCardNumber', 'newCardExpiry', 'newCardCVV'];
-        newCardInputs.forEach(id => {
-            const input = document.getElementById(id);
-            if (input) input.required = false;
-        });
-    }
-    attachOrderEvents(); // Переприкрепляем события
-}
-
-async function saveNewCard() {
-    const number = document.getElementById('newCardNumber').value.replace(/\s/g, '');
-    const expiry = document.getElementById('newCardExpiry').value;
-    const cvv = document.getElementById('newCardCVV').value;
-    if (!number || number.length !== 16 || !expiry || !cvv || cvv.length !== 3) {
-        return showNotification('Неверный формат карты');
-    }
-    try {
-        const res = await fetch('/api/cards', {
-            method: 'POST',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ cardNumber: number, expiry, cvv })
-        });
-        if (!res.ok) {
-            const result = await res.json();
-            return showNotification(result.error || 'Ошибка добавления карты');
-        }
-        const result = await res.json();
-        showNotification('Карта добавлена');
-        toggleNewCardForm();  // Скрыть форму
-        await loadUserDataAndCards();  // Обновить селект
-        // Очистка полей
-        document.getElementById('newCardNumber').value = '';
-        document.getElementById('newCardExpiry').value = '';
-        document.getElementById('newCardCVV').value = '';
-    } catch (err) {
-        console.error(err);
-        showNotification('Ошибка добавления карты');
-    }
-}
-
-function closeOrderModal() {
-    const modal = document.getElementById('orderModal');
-    if (modal) modal.style.display = 'none';
-    newCardFormVisible = false;
-    const fields = document.getElementById('newCardFields');
-    if (fields) fields.style.display = 'none';
-    
-    // Убираем required при закрытии
-    const newCardInputs = ['newCardNumber', 'newCardExpiry', 'newCardCVV'];
-    newCardInputs.forEach(id => {
-        const input = document.getElementById(id);
-        if (input) input.required = false;
-    });
+    // Функция больше не нужна, но оставим для совместимости
+    console.log('Добавление карт отключено');
 }
 
 // ------------------------------
@@ -334,7 +260,7 @@ async function openOrderModal() {
         // Создаём модалку если нет
         if (!document.getElementById('orderModal')) createOrderModal();
         const modal = document.getElementById('orderModal');
-        await loadUserDataAndCards(); // Загружаем данные пользователя и карты
+        await loadUserDataAndCards(); // Загружаем данные пользователя и карту
         calculateTotal(); // Расчёт итога
         // Плейсхолдер для номера (обновится после submit)
         const orderNumber = document.getElementById('orderNumber');
@@ -444,54 +370,102 @@ function checkBalance() {
 
 async function submitOrder(e) {
     e.preventDefault();
+    
     const phone = document.getElementById('orderPhone')?.value || '';
-    const address = document.getElementById('orderAddress')?.value || '';
-    const cardId = document.getElementById('orderCard')?.value || '';
-    if (!cardId) return showNotification('Выберите карту');
-    if (!phone || !address) return showNotification('Заполните телефон и адрес');
-    const cartTotal = cart.reduce((sum, item) => sum + item.Price * item.Quantity, 0);
     const delivery = document.querySelector('input[name="delivery"]:checked')?.value || 'pickup';
+    const address = delivery === 'pickup' ? '' : (document.getElementById('orderAddress')?.value || '');
+    const cardId = document.getElementById('orderCard')?.value || '';
+    
+    console.log('📝 [DEBUG] submitOrder - Параметры:', { phone, address, cardId, delivery });
+    
+    if (!cardId) {
+        showNotification('Выберите карту');
+        return;
+    }
+    if (!phone) {
+        showNotification('Заполните номер телефона');
+        return;
+    }
+    if (delivery !== 'pickup' && !address) {
+        showNotification('Заполните адрес доставки');
+        return;
+    }
+    
+    const cartTotal = cart.reduce((sum, item) => sum + item.Price * item.Quantity, 0);
+    
     let deliveryFee = 0;
     switch (delivery) {
         case '3km': deliveryFee = 5; break;
         case '5km': deliveryFee = 10; break;
         case 'over5km': deliveryFee = 20; break;
     }
+    
     const total = cartTotal + deliveryFee;
-    if (total === 0) return showNotification('Корзина пуста');
+    
+    console.log('📊 [DEBUG] submitOrder - Расчеты:', { cartTotal, deliveryFee, total, delivery });
+    
+    if (total === 0) {
+        showNotification('Корзина пуста');
+        return;
+    }
+    
     try {
+        console.log('📤 [DEBUG] submitOrder - Отправляю заказ на сервер...');
+        
         const res = await fetch('/api/orders/create', {
             method: 'POST',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ phone, address, delivery, cardId, total })
+            body: JSON.stringify({ 
+                phone, 
+                address: address || null, 
+                delivery, 
+                cardId: parseInt(cardId),
+                total: parseFloat(total)
+            })
         });
+        
+        console.log(`📥 [DEBUG] submitOrder - Ответ сервера: ${res.status}`);
+        
+        const result = await res.json();
+        console.log('📨 [DEBUG] submitOrder - Результат:', result);
+        
         if (res.status === 403 || res.status === 401) {
             showNotification('Доступ запрещен');
             closeOrderModal();
             setTimeout(() => window.location.href = '/auth', 2000);
             return;
         }
+        
         if (!res.ok) {
-            const result = await res.json();
-            return showNotification(result.error || 'Ошибка оформления заказа');
+            const errorMsg = result.error || `Ошибка: ${res.status}`;
+            console.error('❌ [DEBUG] submitOrder - Ошибка от сервера:', errorMsg);
+            showNotification(errorMsg);
+            return;
         }
-        const result = await res.json();
+        
+        // Успех!
+        console.log('✅ [DEBUG] submitOrder - Заказ успешно создан!');
         const orderNumber = document.getElementById('orderNumber');
         if (orderNumber) orderNumber.textContent = result.orderId;
-        showNotification(`Заказ #${result.orderId} оформлен! Сумма: ${total} BYN`);
+        
+        showNotification(`✅ Заказ #${result.orderId} оформлен! Сумма: ${total} BYN`);
         closeOrderModal();
         await updateCartCount();
         await displayCartItems();
         closeCart();
-        // Go to accountModal on orders tab
-        if (window.openAccountModal) window.openAccountModal();
-        if (window.loadOrders) window.loadOrders();
+        
+        // Открываем личный кабинет с вкладкой текущих заказов
+        if (window.openAccountModal) {
+            setTimeout(() => window.openAccountModal(), 500);
+        }
+        
     } catch (err) {
-        console.error(err);
-        showNotification('Ошибка оформления заказа');
+        console.error('❌ [DEBUG] submitOrder - Критическая ошибка:', err);
+        showNotification(`Ошибка оформления заказа: ${err.message}`);
     }
 }
+
 // ------------------------------
 // Отображение каталога
 // ------------------------------

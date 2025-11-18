@@ -429,16 +429,22 @@ async function updateOrderStatus(orderId, status) {
 // Новая функция: добавить items из корзины в заказ
 async function addOrderItems(orderId, cartItems) {
     for (const item of cartItems) {
-        await pool.query(
-            `INSERT INTO "OrderItems" ("OrderID", "BookID", "Quantity", "Price")
-             VALUES ($1, $2, $3, $4)`,
-            [orderId, item.BookID, item.Quantity, item.Price]
-        );
-        // Опционально: уменьшить Stock в Books
-        await pool.query(
-            `UPDATE "Books" SET "Stock" = "Stock" - $1 WHERE "BookID" = $2`,
-            [item.Quantity, item.BookID]
-        );
+        try {
+            console.log(`📝 [DEBUG] Добавляю товар в заказ: BookID=${item.BookID}, Quantity=${item.Quantity}`);
+            
+            // Просто добавляем в OrderItems без проверок
+            await pool.query(
+                `INSERT INTO "OrderItems" ("OrderID", "BookID", "Quantity", "Price")
+                 VALUES ($1, $2, $3, $4)`,
+                [orderId, item.BookID, item.Quantity, item.Price]
+            );
+            
+            console.log(`✅ [DEBUG] Товар успешно добавлен в заказ`);
+            
+        } catch (err) {
+            console.error(`❌ [DEBUG] Ошибка при добавлении товара в заказ:`, err);
+            throw err;
+        }
     }
 }
 
