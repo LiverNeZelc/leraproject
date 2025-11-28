@@ -174,9 +174,40 @@ document.addEventListener('DOMContentLoaded', () => {
                                 <p><strong>Метод доставки:</strong> ${order.DeliveryMethod}</p>
                                 <p><strong>Книги:</strong></p>
                                 <ul>${itemsHtml}</ul>
+                                <button class="ready-delivery-btn admin-btn" data-order-id="${order.OrderID}" data-items='${JSON.stringify(order.Items)}'>✅ Готов к доставке</button>
                             `;
-                            div.addEventListener('click', () => openMapModal(order));
                             ordersContainer.appendChild(div);
+                        });
+
+                        // НОВОЕ: обработчик кнопки "Готов к доставке"
+                        ordersContainer.querySelectorAll('.ready-delivery-btn').forEach(btn => {
+                            btn.addEventListener('click', async (e) => {
+                                e.preventDefault();
+                                const orderId = btn.getAttribute('data-order-id');
+                                const items = JSON.parse(btn.getAttribute('data-items'));
+                                
+                                try {
+                                    console.log(`📧 [DEBUG] Отправляю email для заказа #${orderId}`);
+                                    
+                                    const res = await fetch('/api/admin/orders/send-delivery-email', {
+                                        method: 'POST',
+                                        credentials: 'include',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ orderId, items })
+                                    });
+
+                                    if (!res.ok) {
+                                        const error = await res.json();
+                                        throw new Error(error.error || 'Ошибка отправки email');
+                                    }
+
+                                    showNotification('✅ Email отправлен клиенту');
+                                    console.log(`✅ [DEBUG] Email успешно отправлен`);
+                                } catch (err) {
+                                    console.error('❌ [DEBUG] Ошибка отправки email:', err);
+                                    showNotification(`❌ Ошибка: ${err.message}`);
+                                }
+                            });
                         });
                     })
                     .catch(err => {

@@ -811,6 +811,40 @@ function setupAdminPanelEventListeners() {
         });
     }
 
+    // НОВОЕ: Скачивание всех книг в JSON
+    const downloadBooksJsonBtn = document.getElementById('downloadBooksJsonBtn');
+    if (downloadBooksJsonBtn) {
+        downloadBooksJsonBtn.addEventListener('click', async () => {
+            try {
+                console.log('📥 [DEBUG] Нажата кнопка "Выгрузить JSON"');
+                
+                const res = await fetch('/api/books', { credentials: 'include' });
+                if (!res.ok) throw new Error('Ошибка загрузки книг');
+                const books = await res.json();
+                
+                console.log(`✅ [DEBUG] Загружено ${books.length} книг`);
+                
+                // Создаём JSON файл
+                const jsonStr = JSON.stringify(books, null, 2);
+                const blob = new Blob([jsonStr], { type: 'application/json' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `books_${new Date().toISOString().split('T')[0]}.json`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+                
+                console.log(`📥 [DEBUG] JSON файл скачан`);
+                showNotification(`✅ Выгружено ${books.length} книг`);
+            } catch (err) {
+                console.error('❌ [DEBUG] Ошибка скачивания JSON:', err);
+                showNotification('Ошибка скачивания JSON');
+            }
+        });
+    }
+
     // НОВОЕ: Обработчик загрузки JSON файла
     const jsonFileInput = document.getElementById('jsonFileInput');
     if (jsonFileInput) {

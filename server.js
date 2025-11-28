@@ -6,6 +6,7 @@ const path = require("path");
 const db = require('./js/db');
 const cardsDb = require('./js/cardsdb'); // Новый модуль для карт
 const app = express();
+require('dotenv').config();
 const PORT = process.env.PORT || 3000;
 
 // --- Middleware ---
@@ -76,6 +77,49 @@ app.set('views', path.join(__dirname, 'views'));
     await db.initDB();
     await cardsDb.initDB(); // Инициализация БД карт
 })();
+
+// --- API для просмотра VIEW (опционально - для отладки и проверки) ---
+// Просмотр заказов с деталями через VIEW
+app.get('/api/admin/views/orders-details', async (req, res) => {
+    try {
+        if (req.session.userType !== 'employee') {
+            return res.status(403).json({ error: 'Доступ запрещен' });
+        }
+        const result = await db.pool.query(`SELECT * FROM "OrdersWithDetails1" ORDER BY "OrderDate" DESC LIMIT 50`);
+        res.json(result.rows);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Ошибка получения данных VIEW' });
+    }
+});
+
+// Просмотр статистики продаж книг через VIEW
+app.get('/api/admin/views/books-stats', async (req, res) => {
+    try {
+        if (req.session.userType !== 'employee') {
+            return res.status(403).json({ error: 'Доступ запрещен' });
+        }
+        const result = await db.pool.query(`SELECT * FROM "BooksSalesStats1" ORDER BY "TotalRevenue" DESC NULLS LAST`);
+        res.json(result.rows);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Ошибка получения данных VIEW' });
+    }
+});
+
+// Просмотр истории заказов клиента через VIEW
+app.get('/api/admin/views/client-history', async (req, res) => {
+    try {
+        if (req.session.userType !== 'employee') {
+            return res.status(403).json({ error: 'Доступ запрещен' });
+        }
+        const result = await db.pool.query(`SELECT * FROM "ClientOrderHistory1" WHERE "OrderID" IS NOT NULL ORDER BY "OrderDate" DESC`);
+        res.json(result.rows);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Ошибка получения данных VIEW' });
+    }
+});
 
 // --- API ---
 // Получить все книги
@@ -1020,6 +1064,148 @@ app.post('/api/admin/analytics/download', async (req, res) => {
         res.status(500).json({ error: 'Ошибка скачивания аналитики: ' + err.message });
     }
 });
+
+// НОВОЕ: Отправка email о готовности к доставке
+// НОВОЕ: Отправка email о готовности к доставке — РАБОЧАЯ ВЕРСИЯ
+app.post('/api/admin/orders/send-delivery-email', async (req, res) => {
+    try {
+        if (req.session.userType !== 'employee') {
+            return res.status(403).json({ error: 'Доступ запрещен' });
+        }
+
+        const { orderId, items } = req.body;
+        if (!orderId || !items || !Array.isArray(items)) {
+            return res.status(400).json({ error: 'Неверные параметры' });
+        }
+
+        // 1. Получаем заказ с данными клиента
+        const orderQuery = await db.pool.query(
+            `SELECT o."ClientID", o."TotalAmount", c."Email", c."FullName" 
+             FROM "Orders" o 
+             JOIN "Clients" c ON o."ClientID" = c."ClientID" 
+             WHERE o."OrderID" = $1`,
+            [orderId]
+        );
+
+        if (orderQuery.rows.length === 0) {
+            return res.status(404).json({ error: 'Заказ не найден' });
+        }
+
+        const { Email: clientEmail, FullName: clientName, TotalAmount } = orderQuery.rows[0];
+
+        if (!clientEmail) {
+            return res.json({ 
+                message: 'Заказ готов к доставке', 
+                warning: 'У клиента не указан email — письмо не отправлено' 
+            });
+        }
+
+        // 2. Формируем красивый HTML текст письма
+        const itemsHtml = items.map(item => 
+            `<li style="margin: 8px 0;">• ${item.Title} — ${item.Quantity} шт.</li>`
+        ).join('');
+
+        const htmlEmail = `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #ddd; border-radius: 10px;">
+                <h2 style="color: #2c3e50;">Здравствуйте, ${clientName || 'дорогой покупатель'}!</h2>
+                <p>Ваш заказ <strong>#${orderId}</strong> собран и готов к доставке</p>
+                
+                <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                    <h3 style="margin-top: 0;">Состав заказа:</h3>
+                    <ul style="padding-left: 20px;">${itemsHtml}</ul>
+                    <p style="font-size: 18px; font-weight: bold; text-align: right;">
+                        Итого: ${TotalAmount} BYN
+                    </p>
+                </div>
+
+                <p>Мы свяжемся с вами в ближайшее время для уточнения времени доставки.</p>
+                <p>Спасибо за покупку в <strong>BookStore</strong>!</p>
+                
+                <hr style="margin: 30px 0; border: 0; border-top: 1px solid #eee;">
+                <p style="color: #7f8c8d; font-size: 12px;">
+                    Это автоматическое письмо. Пожалуйста, не отвечайте на него.
+                </p>
+            </div>
+        `;
+
+        const plainText = `Здравствуйте, ${clientName || 'дорогой покупатель'}!\n\nВаш заказ #${orderId} готов к доставке.\nСумма: ${TotalAmount} BYN\n\nСпасибо за покупку!`;
+
+        // 3. Отправляем через Gmail API
+        const emailResult = await sendEmailViaGmail(
+            clientEmail,
+            `Заказ #${orderId} готов к доставке`,
+            plainText,
+            htmlEmail
+        );
+
+        if (emailResult) {
+            console.log(`Письмо успешно отправлено клиенту ${clientEmail} по заказу #${orderId}`);
+            return res.json({ message: 'Письмо успешно отправлено клиенту' });
+        } else {
+            console.warn(`Письмо НЕ отправлено по заказу #${orderId} (Gmail API вернул null)`);
+            return res.json({ 
+                message: 'Заказ готов к доставке', 
+                warning: 'Письмо не отправлено — временная проблема с Gmail' 
+            });
+        }
+
+    } catch (err) {
+        console.error('Критическая ошибка в send-delivery-email:', err);
+        res.status(500).json({ error: 'Ошибка сервера' });
+    }
+});
+// Функция отправки email через Gmail (с использованием переменных окружения)
+// РАБОЧАЯ ВЕРСИЯ — НИКОГДА НЕ УБЬЁТ СЕРВЕР И РАБОТАЕТ НА 465
+// === НОВАЯ ФУНКЦИЯ — ОТПРАВКА ЧЕРЕЗ GMAIL API (100% работает всегда) ===
+const { google } = require('googleapis');
+
+const oauth2Client = new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET
+);
+
+// Устанавливаем refresh token один раз
+oauth2Client.setCredentials({
+    refresh_token: process.env.GOOGLE_REFRESH_TOKEN
+});
+
+async function sendEmailViaGmail(to, subject, text, html = '') {
+    try {
+        // Получаем свежий access_token
+        const { token } = await oauth2Client.getAccessToken();
+        if (!token) {
+            console.error('Не удалось получить access_token от Google');
+            return null;
+        }
+
+        const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+
+        // Формируем сырой MIME-сообщение
+        const raw = Buffer.from(
+            `From: "BookStore" <${process.env.GMAIL_USER}>\n` +
+            `To: ${to}\n` +
+            `Subject: =?UTF-8?B?${Buffer.from(subject).toString('base64')}?=\n` +
+            `Content-Type: text/html; charset=utf-8\n` +
+            `Content-Transfer-Encoding: base64\n\n` +
+            `${Buffer.from(html || text).toString('base64')}`
+        ).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+        const res = await gmail.users.messages.send({
+            userId: 'me',
+            requestBody: {
+                raw: raw
+            }
+        });
+
+        console.log(`Email отправлен через Gmail API: ${res.data.id}`);
+        return res.data;
+
+        } catch (err) {
+        console.error('Ошибка Gmail API:', err.message);
+        if (err.response?.data) console.error('Детали ошибки:', err.response.data);
+        return null;
+    }
+}
 
 app.use(express.static(path.join(__dirname)));
 

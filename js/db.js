@@ -145,6 +145,361 @@ async function initDB() {
         CREATE INDEX IF NOT EXISTS "idx_analytics_completed_date" ON "Analytics"("CompletedDate");
         `);
 
+        // --- СОЗДАНИЕ ПРЕДСТАВЛЕНИЙ (VIEWS) ---
+        
+        // VIEW 1: Заказы со всеми деталями (для аналитики и отчётов)
+        await client.query(`
+        CREATE OR REPLACE VIEW "OrdersWithDetails1" AS
+        SELECT 
+            o."OrderID",
+            o."ClientID",
+            c."FullName" AS "ClientName",
+            c."Email" AS "ClientEmail",
+            c."Phone" AS "ClientPhone",
+            o."EmployeeID",
+            e."FullName" AS "EmployeeName",
+            o."OrderDate",
+            o."TotalAmount",
+            o."Status",
+            d."DeliveryMethod",
+            d."DeliveryAddress",
+            d."DeliveryStatus",
+            d."Phone" AS "DeliveryPhone",
+            COUNT(oi."ItemID") AS "BookCount",
+            STRING_AGG(DISTINCT b."Title", ', ') AS "BookTitles"
+        FROM "Orders" o
+        LEFT JOIN "Clients" c ON o."ClientID" = c."ClientID"
+        LEFT JOIN "Employees" e ON o."EmployeeID" = e."EmployeeID"
+        LEFT JOIN "Deliveries" d ON o."OrderID" = d."OrderID"
+        LEFT JOIN "OrderItems" oi ON o."OrderID" = oi."OrderID"
+        LEFT JOIN "Books" b ON oi."BookID" = b."BookID"
+        GROUP BY o."OrderID", c."ClientID", c."FullName", c."Email", c."Phone",
+                 e."EmployeeID", e."FullName", d."DeliveryMethod", d."DeliveryAddress", 
+                 d."DeliveryStatus", d."Phone"
+        `);
+
+        // VIEW 2: Статистика продаж книг (самые популярные, лучшие по доходу)
+        await client.query(`
+        CREATE OR REPLACE VIEW "BooksSalesStats1" AS
+        SELECT 
+            b."BookID",
+            b."Title",
+            a."FullName" AS "AuthorName",
+            b."Genre",
+            b."Price",
+            COUNT(oi."ItemID") AS "TimesSold",
+            SUM(oi."Quantity") AS "TotalQuantitySold",
+            SUM(oi."Quantity" * oi."Price") AS "TotalRevenue",
+            b."Rating",
+            b."Stock",
+            ROUND(AVG(oi."Quantity" * oi."Price"), 2) AS "AverageOrderAmount"
+        FROM "Books" b
+        LEFT JOIN "Authors" a ON b."AuthorID" = a."AuthorID"
+        LEFT JOIN "OrderItems" oi ON b."BookID" = oi."BookID"
+        GROUP BY b."BookID", b."Title", a."FullName", b."Genre", b."Price", b."Rating", b."Stock"
+        `);
+
+        // VIEW 3: История заказов клиентов (для личного кабинета)
+        await client.query(`
+        CREATE OR REPLACE VIEW "ClientOrderHistory1" AS
+        SELECT 
+            c."ClientID",
+            c."FullName" AS "ClientName",
+            c."Email",
+            o."OrderID",
+            o."OrderDate",
+            o."TotalAmount",
+            o."Status",
+            d."DeliveryMethod",
+            d."DeliveryAddress",
+            COUNT(oi."ItemID") AS "ItemsCount",
+            STRING_AGG(b."Title", ', ') AS "BooksList"
+        FROM "Clients" c
+        LEFT JOIN "Orders" o ON c."ClientID" = o."ClientID"
+        LEFT JOIN "Deliveries" d ON o."OrderID" = d."OrderID"
+        LEFT JOIN "OrderItems" oi ON o."OrderID" = oi."OrderID"
+        LEFT JOIN "Books" b ON oi."BookID" = b."BookID"
+        GROUP BY c."ClientID", c."FullName", c."Email", o."OrderID", o."OrderDate",
+                 o."TotalAmount", o."Status", d."DeliveryMethod", d."DeliveryAddress"
+        `);
+
+        // --- СОЗДАНИЕ HISTORY ТАБЛИЦ ДЛЯ АУДИТА ---
+        
+        // History таблица для Orders
+        await client.query(`
+        CREATE TABLE IF NOT EXISTS "OrdersHistory" (
+            "HistoryID" SERIAL PRIMARY KEY,
+            "OperationDate" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            "OperationType" VARCHAR(20) NOT NULL,
+            "OrderID" INT,
+            "ClientID" INT,
+            "EmployeeID" INT,
+            "OldStatus" VARCHAR(50),
+            "NewStatus" VARCHAR(50),
+            "OldTotalAmount" DECIMAL(10,2),
+            "NewTotalAmount" DECIMAL(10,2),
+            "Username" VARCHAR(255),
+            "Details" TEXT
+        );
+        CREATE INDEX IF NOT EXISTS "idx_orders_history_date" ON "OrdersHistory"("OperationDate");
+        CREATE INDEX IF NOT EXISTS "idx_orders_history_order_id" ON "OrdersHistory"("OrderID");
+        `);
+
+        // History таблица для Books
+        await client.query(`
+        CREATE TABLE IF NOT EXISTS "BooksHistory" (
+            "HistoryID" SERIAL PRIMARY KEY,
+            "OperationDate" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            "OperationType" VARCHAR(20) NOT NULL,
+            "BookID" INT,
+            "OldTitle" VARCHAR(255),
+            "NewTitle" VARCHAR(255),
+            "OldPrice" DECIMAL(10,2),
+            "NewPrice" DECIMAL(10,2),
+            "OldStock" INT,
+            "NewStock" INT,
+            "OldRating" NUMERIC(2,1),
+            "NewRating" NUMERIC(2,1),
+            "Username" VARCHAR(255),
+            "Details" TEXT
+        );
+        CREATE INDEX IF NOT EXISTS "idx_books_history_date" ON "BooksHistory"("OperationDate");
+        CREATE INDEX IF NOT EXISTS "idx_books_history_book_id" ON "BooksHistory"("BookID");
+        `);
+
+        // History таблица для Clients
+        await client.query(`
+        CREATE TABLE IF NOT EXISTS "ClientsHistory" (
+            "HistoryID" SERIAL PRIMARY KEY,
+            "OperationDate" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            "OperationType" VARCHAR(20) NOT NULL,
+            "ClientID" INT,
+            "OldEmail" VARCHAR(255),
+            "NewEmail" VARCHAR(255),
+            "OldPhone" VARCHAR(50),
+            "NewPhone" VARCHAR(50),
+            "OldAddress" TEXT,
+            "NewAddress" TEXT,
+            "OldStatus" BOOLEAN,
+            "NewStatus" BOOLEAN,
+            "Username" VARCHAR(255),
+            "Details" TEXT
+        );
+        CREATE INDEX IF NOT EXISTS "idx_clients_history_date" ON "ClientsHistory"("OperationDate");
+        CREATE INDEX IF NOT EXISTS "idx_clients_history_client_id" ON "ClientsHistory"("ClientID");
+        `);
+
+        // Триггер для Orders (INSERT)
+        await client.query(`
+        CREATE OR REPLACE FUNCTION log_orders_insert()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            INSERT INTO "OrdersHistory" ("OrderID", "ClientID", "EmployeeID", "NewStatus", "NewTotalAmount", "OperationType", "Username", "Details")
+            VALUES (NEW."OrderID", NEW."ClientID", NEW."EmployeeID", NEW."Status", NEW."TotalAmount", 'INSERT', CURRENT_USER, 'Новый заказ создан');
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+        
+        DROP TRIGGER IF EXISTS orders_insert_trigger ON "Orders";
+        CREATE TRIGGER orders_insert_trigger
+        AFTER INSERT ON "Orders"
+        FOR EACH ROW
+        EXECUTE FUNCTION log_orders_insert();
+        `);
+
+        // Триггер для Orders (UPDATE)
+        await client.query(`
+        CREATE OR REPLACE FUNCTION log_orders_update()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            INSERT INTO "OrdersHistory" ("OrderID", "ClientID", "EmployeeID", "OldStatus", "NewStatus", "OldTotalAmount", "NewTotalAmount", "OperationType", "Username", "Details")
+            VALUES (NEW."OrderID", NEW."ClientID", NEW."EmployeeID", OLD."Status", NEW."Status", OLD."TotalAmount", NEW."TotalAmount", 'UPDATE', CURRENT_USER, 'Заказ обновлен');
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+        
+        DROP TRIGGER IF EXISTS orders_update_trigger ON "Orders";
+        CREATE TRIGGER orders_update_trigger
+        AFTER UPDATE ON "Orders"
+        FOR EACH ROW
+        EXECUTE FUNCTION log_orders_update();
+        `);
+
+        // Триггер для Orders (DELETE)
+        await client.query(`
+        CREATE OR REPLACE FUNCTION log_orders_delete()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            INSERT INTO "OrdersHistory" ("OrderID", "ClientID", "EmployeeID", "OldStatus", "OldTotalAmount", "OperationType", "Username", "Details")
+            VALUES (OLD."OrderID", OLD."ClientID", OLD."EmployeeID", OLD."Status", OLD."TotalAmount", 'DELETE', CURRENT_USER, 'Заказ удален');
+            RETURN OLD;
+        END;
+        $$ LANGUAGE plpgsql;
+        
+        DROP TRIGGER IF EXISTS orders_delete_trigger ON "Orders";
+        CREATE TRIGGER orders_delete_trigger
+        AFTER DELETE ON "Orders"
+        FOR EACH ROW
+        EXECUTE FUNCTION log_orders_delete();
+        `);
+
+        // Триггер для Books (INSERT)
+        await client.query(`
+        CREATE OR REPLACE FUNCTION log_books_insert()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            INSERT INTO "BooksHistory" ("BookID", "NewTitle", "NewPrice", "NewStock", "NewRating", "OperationType", "Username", "Details")
+            VALUES (NEW."BookID", NEW."Title", NEW."Price", NEW."Stock", NEW."Rating", 'INSERT', CURRENT_USER, 'Новая книга добавлена');
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+        
+        DROP TRIGGER IF EXISTS books_insert_trigger ON "Books";
+        CREATE TRIGGER books_insert_trigger
+        AFTER INSERT ON "Books"
+        FOR EACH ROW
+        EXECUTE FUNCTION log_books_insert();
+        `);
+
+        // Триггер для Books (UPDATE)
+        await client.query(`
+        CREATE OR REPLACE FUNCTION log_books_update()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            INSERT INTO "BooksHistory" ("BookID", "OldTitle", "NewTitle", "OldPrice", "NewPrice", "OldStock", "NewStock", "OldRating", "NewRating", "OperationType", "Username", "Details")
+            VALUES (NEW."BookID", OLD."Title", NEW."Title", OLD."Price", NEW."Price", OLD."Stock", NEW."Stock", OLD."Rating", NEW."Rating", 'UPDATE', CURRENT_USER, 'Книга обновлена');
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+        
+        DROP TRIGGER IF EXISTS books_update_trigger ON "Books";
+        CREATE TRIGGER books_update_trigger
+        AFTER UPDATE ON "Books"
+        FOR EACH ROW
+        EXECUTE FUNCTION log_books_update();
+        `);
+
+        // Триггер для Books (DELETE)
+        await client.query(`
+        CREATE OR REPLACE FUNCTION log_books_delete()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            INSERT INTO "BooksHistory" ("BookID", "OldTitle", "OldPrice", "OldStock", "OldRating", "OperationType", "Username", "Details")
+            VALUES (OLD."BookID", OLD."Title", OLD."Price", OLD."Stock", OLD."Rating", 'DELETE', CURRENT_USER, 'Книга удалена');
+            RETURN OLD;
+        END;
+        $$ LANGUAGE plpgsql;
+        
+        DROP TRIGGER IF EXISTS books_delete_trigger ON "Books";
+        CREATE TRIGGER books_delete_trigger
+        AFTER DELETE ON "Books"
+        FOR EACH ROW
+        EXECUTE FUNCTION log_books_delete();
+        `);
+
+        // Триггер для Clients (INSERT)
+        await client.query(`
+        CREATE OR REPLACE FUNCTION log_clients_insert()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            INSERT INTO "ClientsHistory" ("ClientID", "NewEmail", "NewPhone", "NewAddress", "NewStatus", "OperationType", "Username", "Details")
+            VALUES (NEW."ClientID", NEW."Email", NEW."Phone", NEW."Address", NEW."IsActive", 'INSERT', CURRENT_USER, 'Новый клиент зарегистрирован');
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+        
+        DROP TRIGGER IF EXISTS clients_insert_trigger ON "Clients";
+        CREATE TRIGGER clients_insert_trigger
+        AFTER INSERT ON "Clients"
+        FOR EACH ROW
+        EXECUTE FUNCTION log_clients_insert();
+        `);
+
+        // Триггер для Clients (UPDATE)
+        await client.query(`
+        CREATE OR REPLACE FUNCTION log_clients_update()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            INSERT INTO "ClientsHistory" ("ClientID", "OldEmail", "NewEmail", "OldPhone", "NewPhone", "OldAddress", "NewAddress", "OldStatus", "NewStatus", "OperationType", "Username", "Details")
+            VALUES (NEW."ClientID", OLD."Email", NEW."Email", OLD."Phone", NEW."Phone", OLD."Address", NEW."Address", OLD."IsActive", NEW."IsActive", 'UPDATE', CURRENT_USER, 'Данные клиента обновлены');
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+        
+        DROP TRIGGER IF EXISTS clients_update_trigger ON "Clients";
+        CREATE TRIGGER clients_update_trigger
+        AFTER UPDATE ON "Clients"
+        FOR EACH ROW
+        EXECUTE FUNCTION log_clients_update();
+        `);
+
+        // --- СОЗДАНИЕ СКАЛЯРНЫХ ФУНКЦИЙ (ТОЛЬКО 3 ОСНОВНЫЕ) ---
+
+        // Функция 1: Расчет общей прибыли за период
+        await client.query(`
+        CREATE OR REPLACE FUNCTION calculate_profit(start_date DATE, end_date DATE)
+        RETURNS NUMERIC AS $$
+        DECLARE
+            total_profit NUMERIC;
+        BEGIN
+            SELECT COALESCE(SUM("TotalAmount"), 0)
+            INTO total_profit
+            FROM "Orders"
+            WHERE "OrderDate" >= start_date 
+            AND "OrderDate" <= end_date
+            AND "Status" = 'Завершён';
+            
+            RETURN total_profit;
+        END;
+        $$ LANGUAGE plpgsql IMMUTABLE;
+        `);
+
+        // Функция 2: Расчет скидки на основе суммы заказа
+        await client.query(`
+        CREATE OR REPLACE FUNCTION calculate_discount(order_amount NUMERIC)
+        RETURNS NUMERIC AS $$
+        DECLARE
+            discount_percent NUMERIC;
+        BEGIN
+            -- Скидка зависит от суммы заказа
+            -- 0-50: 0%
+            -- 50-100: 5%
+            -- 100-200: 10%
+            -- 200+: 15%
+            IF order_amount < 50 THEN
+                discount_percent := 0;
+            ELSIF order_amount < 100 THEN
+                discount_percent := 5;
+            ELSIF order_amount < 200 THEN
+                discount_percent := 10;
+            ELSE
+                discount_percent := 15;
+            END IF;
+            
+            RETURN ROUND((order_amount * discount_percent / 100)::NUMERIC, 2);
+        END;
+        $$ LANGUAGE plpgsql IMMUTABLE;
+        `);
+
+        // Функция 3: Подсчет количества купленных книг клиентом
+        await client.query(`
+        CREATE OR REPLACE FUNCTION count_books_purchased(client_id INT)
+        RETURNS INT AS $$
+        DECLARE
+            total_books INT;
+        BEGIN
+            SELECT COALESCE(SUM(oi."Quantity"), 0)
+            INTO total_books
+            FROM "OrderItems" oi
+            JOIN "Orders" o ON oi."OrderID" = o."OrderID"
+            WHERE o."ClientID" = client_id
+            AND o."Status" = 'Завершён';
+            
+            RETURN total_books;
+        END;
+        $$ LANGUAGE plpgsql IMMUTABLE;
+        `);
+
         await client.query('COMMIT');
         console.log('✅ Database initialized successfully');
     } catch (err) {
